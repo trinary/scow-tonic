@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package scow;
+service ScowKeyValue {
+    rpc Ping (PingRequest) returns (PingReply);
+}
+
+message PingRequest {
+    string name = 1;
+}
+
+message PingReply {
+    string greeting = 1;
+}
