@@ -5,6 +5,10 @@ service ScowKeyValue {
     rpc Status (StatusRequest) returns (StatusReply);
     rpc Get (GetRequest) returns (GetReply);
     rpc Set (SetRequest) returns (SetReply);
+
+// Raft stuff, maybe split this out into its own service. 
+    rpc AppendEntries (AppendEntriesRequest) returns (AppendEntriesReply);
+    rpc RequestVote (RequestVoteRequest) returns (RequestVoteReply);
 }
 
 message GetRequest {
@@ -29,4 +33,30 @@ message StatusRequest {
 
 message StatusReply {
     string status = 1;
+}
+
+message AppendEntriesRequest {
+    int64 leader_term = 1;
+    int64 leader_id = 2;
+    int64 prev_log_index = 3;
+    int64 prev_log_term = 4;
+    int64 leader_commit = 5;
+    repeated SetRequest entries = 6;
+}
+
+message AppendEntriesReply {
+    int64 term = 1;
+    bool success = 2;
+}
+
+message RequestVoteRequest {
+    int64 term = 1;
+    int64 candidate_id = 2;
+    int64 last_log_index = 3;
+    int64 last_log_term = 4;
+}
+
+message RequestVoteReply {
+    int64 term = 1;
+    bool vote_granted = 2;
 }

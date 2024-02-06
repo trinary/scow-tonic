@@ -7,9 +7,9 @@ pub struct DbDropGuard {
 }
 
 impl DbDropGuard {
-    pub(crate) fn new() -> DbDropGuard {
-        DbDropGuard { db: Db::new() }
-    }
+    // pub(crate) fn new() -> DbDropGuard {
+    //     DbDropGuard { db: Db::new() }
+    // }
 
     pub(crate) fn db(&self) -> Db {
         self.db.clone()
@@ -27,6 +27,8 @@ impl Db {
             shared: Arc::new(Shared {
                 state: Mutex::new(State {
                     entries: HashMap::new(),
+                    current_term: 0,
+                    voted_for: None,
                 }),
             }),
         }
@@ -51,4 +53,6 @@ struct Shared {
 #[derive(Debug, Default)]
 struct State {
     entries: HashMap<String, String>,
+    current_term: u64,
+    voted_for: Option<u64>
 }
