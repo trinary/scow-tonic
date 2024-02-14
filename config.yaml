@@ -1,7 +1,13 @@
+vote_timeout_min_ms: 150
+vote_timeout_max_ms: 300
 servers:
 - id: 50051
   address: '[::1]:50051'
+  uri: 'http://[::1]:50051'
 - id: 50052
   address: '[::1]:50052'
+  uri: 'http://[::1]:50052'
+
 - id: 50053
   address: '[::1]:50053'
+  uri: 'http://[::1]:50053'

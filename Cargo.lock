@@ -884,6 +884,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "prost",
+ "rand",
  "serde",
  "serde_yaml",
  "tokio",
