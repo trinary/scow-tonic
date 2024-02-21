@@ -1,7 +1,7 @@
 
 use tonic::{Request, Response, Status};
 
-use crate::db::DbDropGuard;
+use crate::db::{self, DbDropGuard};
 use crate::{scow::*, Peer};
 use crate::scow_key_value_server::ScowKeyValue;
 
@@ -9,10 +9,6 @@ pub struct MyScowKeyValue {
     db_drop_guard: DbDropGuard,
     peers: Vec<Peer>
 }
-
-// pub mod scow {
-//     tonic::include_proto!("scow");
-// }
 
 #[tonic::async_trait]
 impl ScowKeyValue for MyScowKeyValue {
@@ -55,7 +51,9 @@ impl ScowKeyValue for MyScowKeyValue {
         Ok(Response::new(AppendEntriesReply { term: 0, success: true}))
     }
     async fn request_vote(&self, request: Request<RequestVoteRequest>) -> Result<Response<RequestVoteReply>, Status> {
-        Err(Status::permission_denied("request_vote impl missing"))
+        let inner = request.into_inner();
+        let db_result = self.db_drop_guard.db().request_vote(inner.term, inner.candidate_id, inner.last_log_index, inner.last_log_term);
+        Ok(Response::new(RequestVoteReply { term: db_result.0, vote_granted: db_result.1 }))
     }
 }
 

@@ -8,10 +8,6 @@ pub struct DbDropGuard {
 }
 
 impl DbDropGuard {
-    // pub(crate) fn new() -> DbDropGuard {
-    //     DbDropGuard { db: Db::new() }
-    // }
-
     pub(crate) fn db(&self) -> Db {
         self.db.clone()
     }
@@ -63,6 +59,18 @@ impl Db {
         state.current_term = term
     }
 
+    pub(crate) fn request_vote(&self, term: u64, candidate_id: u64, candidate_last_index: u64, candidate_last_term: u64) -> (u64, bool) {
+        let mut state = self.shared.state.lock().unwrap();
+        if term < state.current_term {
+            (state.current_term, false)
+        } else {
+            if state.voted_for == None || state.voted_for == Some(candidate_id) {
+                (state.current_term, true)
+            } else {
+                (state.current_term, false)
+            }
+        }
+    }
 }
 
 #[derive(Debug)]

@@ -3,8 +3,7 @@ use std::time::Duration;
 
 use tokio::task::JoinSet;
 use tokio::join;
-use tonic::transport::Channel;
-use tonic::transport::Server;
+use tonic::transport::{Channel, Server};
 use clap::Parser;
 
 use serde::Deserialize;
@@ -68,7 +67,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(ScowKeyValueServer::new(scow_key_value))
         .serve(addr);
 
-    join!(server, heartbeat);
+    let join_res = join!(server, heartbeat);
+
+    match join_res {
+        (Ok(_), Ok(_)) => println!("server, heartbeat: OK, OK"),
+        (Ok(_), Err(e)) => println!("server, heartbeat: OK, Err {:?}", e),
+        (Err(e), Ok(_)) => println!("server, heartbeat: Err {:?} OK", e),
+        (Err(e), Err(ee)) => println!("server, heartbeat: Err {:?} Err {:?}", e, ee),
+    }
     
     Ok(())
 }
