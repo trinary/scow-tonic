@@ -58,7 +58,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = my_config.address.parse().unwrap();
     let scow_key_value = MyScowKeyValue::new();
 
-
     let heartbeat = tokio::spawn(
         heartbeat(config_arc, cli.id)
     );
@@ -93,6 +92,7 @@ async fn initiate_vote(peer_clients: Vec<ScowKeyValueClient<Channel>>) -> Vec<Re
     let mut set = JoinSet::new();
     let mut replies = vec![];
 
+    // 
     for mut client in peer_clients {
         set.spawn(async move {
             client.request_vote(RequestVoteRequest {
@@ -133,6 +133,7 @@ async fn heartbeat(config_arc: Arc<Config>, my_id: u64) -> () {
     loop {
         println!("heartbeat loop inner");
         interval.tick().await;
+        // TODO get the last heartbeat time and role from the db state, check if we need to ask for votes.
         let vote_res = initiate_vote(peer_clients.clone()).await;
         println!("vote results:{:?}", vote_res);
     }

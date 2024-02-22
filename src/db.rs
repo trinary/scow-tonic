@@ -2,22 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-#[derive(Debug, Clone)]
-pub struct DbDropGuard {
-    db: Db,
-}
-
-impl DbDropGuard {
-    pub(crate) fn db(&self) -> Db {
-        self.db.clone()
-    }
-
-    pub fn new() -> Self {
-        Self { 
-            db: Db::new()
-        }
-    }
-}
+use tonic::Status;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Db {
@@ -70,6 +55,17 @@ impl Db {
                 (state.current_term, false)
             }
         }
+    }
+
+    pub(crate) fn update_heartbeat(&self) -> Result<(), Status> {
+        let mut state = self.shared.state.lock().unwrap();
+        state.last_heartbeat = Instant::now();
+        Ok(())
+    }
+
+    pub(crate) fn get_last_heartbeat(&self) -> Result<Instant, Status> {
+        let state = self.shared.state.lock().unwrap();
+        Ok(state.last_heartbeat)
     }
 }
 
