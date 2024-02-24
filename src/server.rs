@@ -17,7 +17,6 @@ mod scow_impl;
 use crate::scow_key_value_client::ScowKeyValueClient;
 use crate::scow_impl::MyScowKeyValue;
 
-
 pub mod scow {
     tonic::include_proto!("scow");
 }
@@ -41,6 +40,7 @@ struct Peer {
     address: String,
     uri: String,
 }
+
 
 
 #[tokio::main]
@@ -92,7 +92,7 @@ async fn initiate_vote(peer_clients: Vec<ScowKeyValueClient<Channel>>) -> Vec<Re
     let mut set = JoinSet::new();
     let mut replies = vec![];
 
-    // 
+    // need current term, log index, log term (log term??)
     for mut client in peer_clients {
         set.spawn(async move {
             client.request_vote(RequestVoteRequest {
