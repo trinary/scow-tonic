@@ -1,8 +1,7 @@
-use std::borrow::BorrowMut;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use tokio::time::Instant;
-use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
 use crate::db::Db;
@@ -23,6 +22,14 @@ pub struct ServerState {
     voted_for: Option<u64>,
     last_heartbeat: Instant,
     last_log_index: u64,
+    leader_state: Option<LeaderState>,
+}
+
+pub struct LeaderState {
+    /// for each server, index of the next log entry to send to that server (initialized to leaderlast log index + 1)
+    next_index: HashMap<u64, u64>,
+    /// for each server, index of highest log entry known to be replicated on server (initialized to 0, increases monotonically)
+    match_index: HashMap<u64, u64>,
 }
 
 pub struct MyScowKeyValue {
@@ -105,14 +112,13 @@ impl MyScowKeyValue {
                 voted_for: None,
                 last_heartbeat: Instant::now(),
                 last_log_index: 0,
+                leader_state: None,
             }))
         }
     }
 
     pub fn server_request_vote(&self, candidate_term: u64, candidate_id: u64, candidate_last_index: u64) -> (u64, bool) {
-        // wrap access to server_state in mutex lock(), and it should be good, idk how that actually works tho because it won't be mut!
         let mut server_state = self.server_state.lock().unwrap();
-        // it just works?!!?! fuck
         if candidate_term < server_state.current_term {
             server_state.voted_for = None;
             (server_state.current_term, false)

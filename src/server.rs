@@ -29,15 +29,21 @@ struct Cli {
 
 #[derive(Deserialize, Debug, Clone)]
 struct Config {
+    /// List of peer servers, comes from the config file.
     servers: Vec<Peer>,
+    /// Minimum number of milliseconds to wait for a heartbeat before triggering an election.
     vote_timeout_min_ms: u32,
+    /// Maximum number of milliseconds to wait for a heartbeat before triggering an election.
     vote_timeout_max_ms: u32,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 struct Peer {
+    /// unique identifier number for this server. 
     id: u64,
+    /// Some string that can be parsed into a SocketAddr
     address: String,
+    /// Some string that can be passed into tonic Channel builder
     uri: String,
 }
 
