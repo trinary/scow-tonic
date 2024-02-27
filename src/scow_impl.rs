@@ -1,6 +1,8 @@
 use std::borrow::BorrowMut;
+use std::sync::{Arc, Mutex};
 
 use tokio::time::Instant;
+use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
 use crate::db::Db;
@@ -26,7 +28,7 @@ pub struct ServerState {
 pub struct MyScowKeyValue {
     db: Db,
     peers: Vec<Peer>,
-    server_state: ServerState,
+    server_state: Arc<Mutex<ServerState>>,
 }
 
 #[tonic::async_trait]
@@ -73,13 +75,21 @@ impl ScowKeyValue for MyScowKeyValue {
 
     async fn request_vote(&self, request: Request<RequestVoteRequest>) -> Result<Response<RequestVoteReply>, Status> {
         let inner = request.into_inner();
-        // TODO : we can't change this signature to &mut self, since that's defined by tonic.
+        // TODO : we can't change this signature to &mut self, that's defined by tonic.
         // SO how do we represent this write operation on MyScowKeyValue::sever_state to fix the error on self.server_request_vote?
         // Is server_state in the wrong place? Who should own it? 
 
-        // Look at tonic examples for clues!!!!
+        // Look at tonic examples for clues. Didnt find any immediately.
+        // "interior mutability" is maybe the term that I'm running into here. not sure if I want to get into using refcell stuff to fix this
 
-        let server_result = self.server_request_vote(inner.term, inner.candidate_id, inner.last_log_index, inner.last_log_term);
+        // after further consideration, we'll need to do refcell stuff to fix this. Mutex it?
+
+
+        let server_result = self.server_request_vote(
+            inner.term, 
+            inner.candidate_id, 
+            inner.last_log_index
+        );
         Ok(Response::new(RequestVoteReply { term: server_result.0, vote_granted: server_result.1 }))
     }
 }
@@ -89,28 +99,31 @@ impl MyScowKeyValue {
         MyScowKeyValue {
             db: Db::new(),
             peers: vec![],
-            server_state: ServerState {
+            server_state: Arc::new(Mutex::new(ServerState {
                 role: Role::Follower,
                 current_term: 0,
                 voted_for: None,
                 last_heartbeat: Instant::now(),
                 last_log_index: 0,
-            }
+            }))
         }
     }
 
-    pub fn server_request_vote(&mut self, candidate_term: u64, candidate_id: u64, candidate_last_index: u64, candidate_last_term: u64) -> (u64, bool) {
-        if candidate_term < self.server_state.current_term {
-            self.server_state.voted_for = None;
-            (self.server_state.current_term, false)
+    pub fn server_request_vote(&self, candidate_term: u64, candidate_id: u64, candidate_last_index: u64) -> (u64, bool) {
+        // wrap access to server_state in mutex lock(), and it should be good, idk how that actually works tho because it won't be mut!
+        let mut server_state = self.server_state.lock().unwrap();
+        // it just works?!!?! fuck
+        if candidate_term < server_state.current_term {
+            server_state.voted_for = None;
+            (server_state.current_term, false)
         } else {
-            if (self.server_state.voted_for == None || self.server_state.voted_for == Some(candidate_id)) &&
-            candidate_last_index >= self.server_state.last_log_index {
-                self.server_state.voted_for = Some(candidate_id);
-                (self.server_state.current_term, true)
+            if (server_state.voted_for == None || server_state.voted_for == Some(candidate_id)) &&
+            candidate_last_index >= server_state.last_log_index {
+                server_state.voted_for = Some(candidate_id);
+                (server_state.current_term, true)
             } else {
-                self.server_state.voted_for = None;
-                (self.server_state.current_term, false)
+                server_state.voted_for = None;
+                (server_state.current_term, false)
             }
         }
     }
