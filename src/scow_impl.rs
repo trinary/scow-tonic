@@ -1,15 +1,21 @@
 use std::collections::HashMap;
+use std::error::Error;
 use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
+use std::time::Duration;
 
+use tokio::task::JoinSet;
 use tokio::time::Instant;
+use tonic::transport::Channel;
 use tonic::{Request, Response, Status};
 
 use crate::db::Db;
-use crate::{scow::*, Peer};
+use crate::scow_key_value_client::ScowKeyValueClient;
+use crate::{scow::*, Config, Peer};
 use crate::scow_key_value_server::ScowKeyValue;
 
-#[derive(Debug, Default)]
-enum Role {
+#[derive(Debug, Default, PartialEq, Eq)]
+pub enum Role {
     #[default]
     Follower, 
     Leader, 
@@ -17,12 +23,25 @@ enum Role {
 }
 
 pub struct ServerState {
-    role: Role,
-    current_term: u64,
-    voted_for: Option<u64>,
-    last_heartbeat: Instant,
-    last_log_index: u64,
-    leader_state: Option<LeaderState>,
+    pub role: Role,
+    pub current_term: u64,
+    pub voted_for: Option<u64>,
+    pub last_heartbeat: Instant,
+    pub last_log_index: u64,
+    pub leader_state: Option<LeaderState>,
+}
+
+impl ServerState {
+    fn new() -> Self {
+        Self {
+            role: Role::Follower,
+            current_term: 0,
+            voted_for: None,
+            last_heartbeat: Instant::now(), // this could cause problems.
+            last_log_index: 0,
+            leader_state: None
+        }
+    }
 }
 
 pub struct LeaderState {
@@ -35,7 +54,7 @@ pub struct LeaderState {
 pub struct MyScowKeyValue {
     db: Db,
     peers: Vec<Peer>,
-    server_state: Arc<Mutex<ServerState>>,
+    pub server_state: Arc<Mutex<ServerState>>,
 }
 
 #[tonic::async_trait]
@@ -76,22 +95,14 @@ impl ScowKeyValue for MyScowKeyValue {
         for i in inner.entries {
             self.db.set(&i.key, &i.value);
         }
-        //self.db.update_heartbeat()?;
+
+        let mut state_inner = self.server_state.lock().unwrap();
+        state_inner.last_heartbeat = Instant::now();
         Ok(Response::new(AppendEntriesReply { term: 0, success: true}))
     }
 
     async fn request_vote(&self, request: Request<RequestVoteRequest>) -> Result<Response<RequestVoteReply>, Status> {
         let inner = request.into_inner();
-        // TODO : we can't change this signature to &mut self, that's defined by tonic.
-        // SO how do we represent this write operation on MyScowKeyValue::sever_state to fix the error on self.server_request_vote?
-        // Is server_state in the wrong place? Who should own it? 
-
-        // Look at tonic examples for clues. Didnt find any immediately.
-        // "interior mutability" is maybe the term that I'm running into here. not sure if I want to get into using refcell stuff to fix this
-
-        // after further consideration, we'll need to do refcell stuff to fix this. Mutex it?
-
-
         let server_result = self.server_request_vote(
             inner.term, 
             inner.candidate_id, 
@@ -133,4 +144,79 @@ impl MyScowKeyValue {
             }
         }
     }
+
+    // TODO should I move all the heartbeat and voting stuff here? Should make state and futures easier to manage.
+
+    pub async fn election_loop_doer(&self, config_arc: Arc<Config>, my_id: u64) -> Result<(), Box<dyn Error>> {
+        self.election_loop(config_arc, my_id).await;
+        Ok(())
+    }
+
+    async fn election_loop(&self, config_arc: Arc<Config>, my_id: u64) -> () {
+        let mut peer_clients: Vec<ScowKeyValueClient<Channel>> = vec![];
+        let peer_configs: Vec<&Peer> = config_arc.servers.iter().filter(|s| s.id != my_id).collect();
+        
+    
+        for p in peer_configs.iter() {
+            let client = Self::build_client(p).await;
+            match client {
+                Ok(c) => peer_clients.push(c),
+                Err(_) => panic!("asdfasdfd"),
+            }
+        }
+        println!("peer clients?!!? {:?}", peer_clients);
+    
+        let mut interval = tokio::time::interval(Duration::from_millis(500));
+        let mut timeout = Duration::from_millis(500);
+        println!("gonna start the election/vote-request loop.");
+        loop {
+            interval.tick().await;
+            let server_state_inner = self.server_state.lock().unwrap();
+            if server_state_inner.role == Role::Follower {
+                if server_state_inner.last_heartbeat.elapsed() > timeout {
+                    // Request votes!
+                    let vote_res = Self::initiate_vote(peer_clients.clone()).await;
+                    println!("vote results:{:?}", vote_res);
+                }
+            }
+        }
+    }
+
+    async fn initiate_vote(peer_clients: Vec<ScowKeyValueClient<Channel>>) -> Vec<RequestVoteReply> {
+        println!("initiated vote request???");
+        let mut set = JoinSet::new();
+        let mut replies = vec![];
+    
+        // need current term, log index, log term (log term??)
+        for mut client in peer_clients {
+            set.spawn(async move {
+                client.request_vote(RequestVoteRequest {
+                    term: 1,
+                    candidate_id: 1,
+                    last_log_index: 2,
+                    last_log_term: 3,
+                }).await
+            });
+        }
+    
+    
+        while let Some(res) = set.join_next().await {
+            let reply = res.unwrap();
+            match reply {
+                Ok(r) => replies.push(r.into_inner()),
+                Err(e) => println!("err from getting vote reply: {:?}", e),
+            }
+        }
+        replies
+    }
+
+    async fn build_client(peer: &Peer) -> Result<ScowKeyValueClient<Channel>, Box<dyn std::error::Error>> {
+        if let Ok(uri) = peer.uri.parse() {
+            let endpoint = tonic::transport::channel::Channel::builder(uri);
+            Ok(ScowKeyValueClient::new(endpoint.connect_lazy()))
+        } else {
+            Err("invalid uri")?
+        }
+    }
+    
 }
