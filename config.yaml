@@ -1,5 +1,5 @@
-vote_timeout_min_ms: 150
-vote_timeout_max_ms: 300
+election_timeout_min_ms: 150
+election_timeout_max_ms: 300
 servers:
 - id: 50051
   address: '[::1]:50051'

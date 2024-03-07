@@ -1,23 +1,17 @@
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-
-use scow_impl::ServerState;
-use tokio::task::JoinSet;
+use std::sync::Arc;
 use tokio::join;
-use tonic::server;
-use tonic::transport::{Channel, Server};
+use tonic::transport::Server;
 use clap::Parser;
-
 use serde::Deserialize;
-
 use scow::*;
 use scow::scow_key_value_server::ScowKeyValueServer;
 
-mod db;
+use crate::scow_impl::MyScowKeyValue;
+use crate::election::ElectionHandler;
 
+mod db;
 mod scow_impl;
-use crate::scow_key_value_client::ScowKeyValueClient;
-use crate::scow_impl::{MyScowKeyValue, Role};
+mod election;
 
 pub mod scow {
     tonic::include_proto!("scow");
@@ -66,15 +60,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = my_config.address.parse().unwrap();
     let scow_key_value = MyScowKeyValue::new();
 
+    let election_doer = ElectionHandler::new(&scow_key_value.server_state, config_arc, cli.id);
+    let election_future = election_doer.election_loop_doer();
+
     let server = Server::builder()
         .add_service(ScowKeyValueServer::new(scow_key_value))
-        .serve(addr);    
+        .serve(addr);
 
-        let election_handle = scow_key_value.election_loop_doer(config_arc, cli.id);
-
-//    let _join_res = join!(server, election_handle);
-
-//    println!("Join results: {:?}", _join_res);
+    let _join_res = join!(server, election_future);
     
     Ok(())
 }
