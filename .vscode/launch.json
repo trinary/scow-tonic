@@ -9,7 +9,7 @@
             "request": "launch",
             "name": "Launch",
             "program": "${workspaceFolder}/target/debug/server.exe",
-            "args": [],
+            "args": ["--id", "50051"],
             "cwd": "${workspaceFolder}",
             "env": {
                 "OUT_DIR": "${workspaceFolder}/src/protos/"

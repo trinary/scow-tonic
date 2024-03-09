@@ -1,17 +1,13 @@
 use std::collections::HashMap;
-use std::error::Error;
-use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
-use std::time::Duration;
 
-use tokio::task::JoinSet;
+use std::sync::{Arc, Mutex};
+
+
 use tokio::time::Instant;
-use tonic::transport::Channel;
 use tonic::{Request, Response, Status};
 
 use crate::db::Db;
-use crate::scow_key_value_client::ScowKeyValueClient;
-use crate::{scow::*, Config, Peer};
+use crate::{scow::*, Peer};
 use crate::scow_key_value_server::ScowKeyValue;
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -61,9 +57,8 @@ pub struct MyScowKeyValue {
 impl ScowKeyValue for MyScowKeyValue {
     async fn status(
         &self,
-        request: Request<StatusRequest>,
+        _request: Request<StatusRequest>,
     ) -> Result<Response<StatusReply>, Status> {
-        println!("Got a request from {:?}", request.remote_addr());
 
         let reply = StatusReply {
             status: "Status: OK".to_string(),
@@ -96,8 +91,10 @@ impl ScowKeyValue for MyScowKeyValue {
             self.db.set(&i.key, &i.value);
         }
 
+        tracing::debug!("asking for server_state in append_entries");
         let mut state_inner = self.server_state.lock().unwrap();
         state_inner.last_heartbeat = Instant::now();
+        tracing::debug!("DONE with server_state in append_entries");
         Ok(Response::new(AppendEntriesReply { term: 0, success: true}))
     }
 
@@ -117,19 +114,17 @@ impl MyScowKeyValue {
         MyScowKeyValue {
             db: Db::new(),
             peers: vec![],
-            server_state: Arc::new(Mutex::new(ServerState {
-                role: Role::Follower,
-                current_term: 0,
-                voted_for: None,
-                last_heartbeat: Instant::now(),
-                last_log_index: 0,
-                leader_state: None,
-            }))
+            server_state: Arc::new(Mutex::new(ServerState::new()))
         }
     }
 
     pub fn server_request_vote(&self, candidate_term: u64, candidate_id: u64, candidate_last_index: u64) -> (u64, bool) {
-        let mut server_state = self.server_state.lock().unwrap();
+        tracing::debug!("about to ask for state mutex.");
+        // TODO: this is fucked.
+        let sstate = Arc::clone(&self.server_state);
+        let mut server_state = sstate.lock().unwrap();
+        tracing::debug!("got state mutex.");
+        
         if candidate_term < server_state.current_term {
             server_state.voted_for = None;
             (server_state.current_term, false)
@@ -144,7 +139,4 @@ impl MyScowKeyValue {
             }
         }
     }
-
-    // TODO should I move all the heartbeat and voting stuff here? Should make state and futures easier to manage.
-
 }

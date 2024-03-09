@@ -14,9 +14,9 @@ pub struct ElectionHandler {
 }
 
 impl ElectionHandler {
-    pub fn new(server_state: &Arc<Mutex<ServerState>>, config_arc: Arc<Config>, id: u64) -> Self {
+    pub fn new(server_state: Arc<Mutex<ServerState>>, config_arc: Arc<Config>, id: u64) -> Self {
         Self {
-            server_state: server_state.clone(),
+            server_state: server_state,
             config: config_arc,
             id: id
         }
@@ -38,31 +38,34 @@ impl ElectionHandler {
                 Err(e) => panic!("panic from build_client: {:?}", e),
             }
         }
-        println!("peer clients?!!? {:?}", peer_clients);
     
         let mut interval = tokio::time::interval(Duration::from_millis(500));
-        let mut timeout = Duration::from_millis(500);
-        println!("gonna start the election/vote-request loop.");
+        let timeout = Duration::from_millis(500);
         loop {
             interval.tick().await;
-            let server_state_inner = self.server_state.lock().unwrap();
-            if server_state_inner.role == Role::Follower {
-                if server_state_inner.last_heartbeat.elapsed() > timeout {
-                    // Request votes!
-                    let vote_res = Self::initiate_vote(peer_clients.clone()).await;
-                    println!("vote results:{:?}", vote_res);
+            tracing::debug!("requesting lock inside election loop anonymous block");
+            let _x = {
+                let sstate = Arc::clone(&self.server_state);
+                let mut server_state_inner = sstate.lock().unwrap();
+                tracing::debug!("got lock on server state inside election loop anonymous block, initiating votes maybe.");
+                if server_state_inner.role == Role::Follower {
+                    if server_state_inner.last_heartbeat.elapsed() > timeout {
+                        // Request votes!
+                    //    let vote_res = Self::initiate_vote(peer_clients.clone()).await;
+                    //    tracing::info!("vote results:{:?}", vote_res);
+                    }
                 }
-            }
+                tracing::debug!("got to end of inner vote loop anonymous block.");
+            };
         }
     }
 
     async fn initiate_vote(peer_clients: Vec<ScowKeyValueClient<Channel>>) -> Vec<RequestVoteReply> {
-        println!("initiated vote request???");
-        let mut set = JoinSet::new();
+       let mut set = JoinSet::new();
         let mut replies = vec![];
-    
-        // need current term, log index, log term (log term??)
+
         for mut client in peer_clients {
+
             set.spawn(async move {
                 client.request_vote(RequestVoteRequest {
                     term: 1,
@@ -72,12 +75,14 @@ impl ElectionHandler {
                 }).await
             });
         }
-
+        // TODO We're getting stuck in here somewhere. 
         while let Some(res) = set.join_next().await {
             let reply = res.unwrap();
             match reply {
                 Ok(r) => replies.push(r.into_inner()),
-                Err(e) => println!("err from getting vote reply: {:?}", e),
+                Err(e) => { 
+                    tracing::error!("err from getting vote reply: {:?}", e)
+                },
             }
         }
         replies

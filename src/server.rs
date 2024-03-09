@@ -47,6 +47,9 @@ struct Peer {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+    .with_max_level(tracing::Level::DEBUG)
+    .init();
 
     let cli = Cli::parse();
 
@@ -55,12 +58,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let my_config = config_arc.servers.iter().find(|s| s.id == cli.id).expect("couldn't find my config.");
     
-    println!("MY config: {:?}", my_config);
+    tracing::info!("MY config: {:?}", my_config);
 
     let addr = my_config.address.parse().unwrap();
     let scow_key_value = MyScowKeyValue::new();
 
-    let election_doer = ElectionHandler::new(&scow_key_value.server_state, config_arc, cli.id);
+    let election_doer = ElectionHandler::new(scow_key_value.server_state.clone(), config_arc, cli.id);
     let election_future = election_doer.election_loop_doer();
 
     let server = Server::builder()
