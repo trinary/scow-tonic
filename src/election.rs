@@ -1,6 +1,6 @@
 use std::{error::Error, sync::{Arc, Mutex}, time::Duration};
 
-use tokio::task::JoinSet;
+use rand::{thread_rng, Rng};
 use tonic::transport::Channel;
 
 use crate::{scow_impl::{Role, ServerState}, scow_key_value_client::ScowKeyValueClient, Config, Peer, RequestVoteReply, RequestVoteRequest};
@@ -28,6 +28,7 @@ impl ElectionHandler {
 
     async fn election_loop(&self) -> () {
         let mut peer_clients: Vec<ScowKeyValueClient<Channel>> = vec![];
+        let mut rng = thread_rng();
         let peer_configs: Vec<&Peer> = self.config.servers.iter().filter(|s| s.id != self.id).collect();
         
     
@@ -38,47 +39,41 @@ impl ElectionHandler {
                 Err(e) => panic!("panic from build_client: {:?}", e),
             }
         }
+
+        let interval_range = self.config.election_timeout_min_ms as u64..self.config.election_timeout_max_ms as u64;
     
-        let mut interval = tokio::time::interval(Duration::from_millis(500));
-        let timeout = Duration::from_millis(500);
+        let timeout = Duration::from_millis(1500);
         loop {
+            let mut interval = tokio::time::interval(Duration::from_millis(rng.gen_range(interval_range.clone())));
             interval.tick().await;
             tracing::debug!("requesting lock inside election loop anonymous block");
             let _x = {
-                let sstate = Arc::clone(&self.server_state);
-                let mut server_state_inner = sstate.lock().unwrap();
+                //let mut server_state_inner = server_state.lock().unwrap();
                 tracing::debug!("got lock on server state inside election loop anonymous block, initiating votes maybe.");
-                if server_state_inner.role == Role::Follower {
-                    if server_state_inner.last_heartbeat.elapsed() > timeout {
+                //if server_state_inner.role == Role::Follower {
+                //    if server_state_inner.last_heartbeat.elapsed() > timeout {
                         // Request votes!
-                    //    let vote_res = Self::initiate_vote(peer_clients.clone()).await;
-                    //    tracing::info!("vote results:{:?}", vote_res);
-                    }
-                }
+                        let vote_res = Self::initiate_vote(peer_clients.clone()).await;
+                        tracing::info!("vote results:{:?}", vote_res);
+                //    }
+                //}
                 tracing::debug!("got to end of inner vote loop anonymous block.");
             };
         }
     }
 
     async fn initiate_vote(peer_clients: Vec<ScowKeyValueClient<Channel>>) -> Vec<RequestVoteReply> {
-       let mut set = JoinSet::new();
         let mut replies = vec![];
 
         for mut client in peer_clients {
-
-            set.spawn(async move {
-                client.request_vote(RequestVoteRequest {
-                    term: 1,
-                    candidate_id: 1,
-                    last_log_index: 2,
-                    last_log_term: 3,
-                }).await
-            });
-        }
-        // TODO We're getting stuck in here somewhere. 
-        while let Some(res) = set.join_next().await {
-            let reply = res.unwrap();
-            match reply {
+            let res = client.request_vote(RequestVoteRequest {
+                term: 1,
+                candidate_id: 1,
+                last_log_index: 2,
+                last_log_term: 3,
+            }).await;
+    
+            match res {
                 Ok(r) => replies.push(r.into_inner()),
                 Err(e) => { 
                     tracing::error!("err from getting vote reply: {:?}", e)

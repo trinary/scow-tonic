@@ -28,7 +28,7 @@ pub struct ServerState {
 }
 
 impl ServerState {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             role: Role::Follower,
             current_term: 0,
@@ -50,7 +50,8 @@ pub struct LeaderState {
 pub struct MyScowKeyValue {
     db: Db,
     peers: Vec<Peer>,
-    pub server_state: Arc<Mutex<ServerState>>,
+    // TODO: so here we are. lifetime specifier required for this.
+    server_state: Arc<Mutex<ServerState>>,
 }
 
 #[tonic::async_trait]
@@ -92,8 +93,8 @@ impl ScowKeyValue for MyScowKeyValue {
         }
 
         tracing::debug!("asking for server_state in append_entries");
-        let mut state_inner = self.server_state.lock().unwrap();
-        state_inner.last_heartbeat = Instant::now();
+        //let mut state_inner = self.server_state.lock().unwrap();
+        //state_inner.last_heartbeat = Instant::now();
         tracing::debug!("DONE with server_state in append_entries");
         Ok(Response::new(AppendEntriesReply { term: 0, success: true}))
     }
@@ -109,22 +110,26 @@ impl ScowKeyValue for MyScowKeyValue {
     }
 }
 
-impl MyScowKeyValue {
-    pub fn new() -> Self {
+impl MyScowKeyValue<> {
+    pub fn new(server_state: Arc<Mutex<ServerState>>) -> Self {
         MyScowKeyValue {
             db: Db::new(),
             peers: vec![],
-            server_state: Arc::new(Mutex::new(ServerState::new()))
+            server_state: server_state,
         }
     }
 
     pub fn server_request_vote(&self, candidate_term: u64, candidate_id: u64, candidate_last_index: u64) -> (u64, bool) {
         tracing::debug!("about to ask for state mutex.");
-        // TODO: this is fucked.
-        let sstate = Arc::clone(&self.server_state);
-        let mut server_state = sstate.lock().unwrap();
-        tracing::debug!("got state mutex.");
+        // TODO: we need to get the ServerState here somehow. Only have it be owned by one thing! Right now
+        // that one thing is ElectionHandler, but that seems wrong. ServerStateManager should provide ServerState
+        // to both ElectionHandler (and soon HeartbeatHandler or whatever else) as well as the KeyValue piece
+        // KV (tonic service) needs it in order to respond to vote requests and AppendEntries, and Handler types
+        // need it to do their server maintenance stuff. But it should only "live" in one place!!!
+
+        let mut server_state = self.server_state.lock().unwrap();
         
+        tracing::debug!("got state mutex.");
         if candidate_term < server_state.current_term {
             server_state.voted_for = None;
             (server_state.current_term, false)

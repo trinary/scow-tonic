@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::join;
 use tonic::transport::Server;
 use clap::Parser;
@@ -6,7 +6,7 @@ use serde::Deserialize;
 use scow::*;
 use scow::scow_key_value_server::ScowKeyValueServer;
 
-use crate::scow_impl::MyScowKeyValue;
+use crate::scow_impl::{MyScowKeyValue, ServerState};
 use crate::election::ElectionHandler;
 
 mod db;
@@ -60,10 +60,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     tracing::info!("MY config: {:?}", my_config);
 
-    let addr = my_config.address.parse().unwrap();
-    let scow_key_value = MyScowKeyValue::new();
+    let server_state = Arc::new(Mutex::new(ServerState::new()));
 
-    let election_doer = ElectionHandler::new(scow_key_value.server_state.clone(), config_arc, cli.id);
+    let addr = my_config.address.parse().unwrap();
+    let scow_key_value = MyScowKeyValue::new(server_state.clone());
+
+    let election_doer = ElectionHandler::new(server_state.clone(), config_arc, cli.id);
     let election_future = election_doer.election_loop_doer();
 
     let server = Server::builder()
