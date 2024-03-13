@@ -1,5 +1,6 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::join;
+use tokio::sync::Mutex;
 use tonic::transport::Server;
 use clap::Parser;
 use serde::Deserialize;
@@ -65,8 +66,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = my_config.address.parse().unwrap();
     let scow_key_value = MyScowKeyValue::new(server_state.clone());
 
-    let election_doer = ElectionHandler::new(server_state.clone(), config_arc, cli.id);
-    let election_future = election_doer.election_loop_doer();
+    let election_handler = ElectionHandler::new(server_state.clone(), config_arc, cli.id);
+    let election_future = election_handler.run_election_loop();
 
     let server = Server::builder()
         .add_service(ScowKeyValueServer::new(scow_key_value))

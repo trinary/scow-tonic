@@ -1,7 +1,8 @@
-use std::{error::Error, sync::{Arc, Mutex}, time::Duration};
+use std::{error::Error, sync::Arc, time::Duration};
 
 use rand::{thread_rng, Rng};
 use tonic::transport::Channel;
+use tokio::sync::Mutex;
 
 use crate::{scow_impl::{Role, ServerState}, scow_key_value_client::ScowKeyValueClient, Config, Peer, RequestVoteReply, RequestVoteRequest};
 
@@ -21,7 +22,7 @@ impl ElectionHandler {
             id: id
         }
     }
-    pub async fn election_loop_doer(&self) -> Result<(), Box<dyn Error>> {
+    pub async fn run_election_loop(&self) -> Result<(), Box<dyn Error>> {
         self.election_loop().await;
         Ok(())
     }
@@ -43,20 +44,21 @@ impl ElectionHandler {
         let interval_range = self.config.election_timeout_min_ms as u64..self.config.election_timeout_max_ms as u64;
     
         let timeout = Duration::from_millis(1500);
+        let mut interval = tokio::time::interval(Duration::from_millis(rng.gen_range(interval_range.clone())));
+        interval.tick().await;
         loop {
-            let mut interval = tokio::time::interval(Duration::from_millis(rng.gen_range(interval_range.clone())));
             interval.tick().await;
             tracing::debug!("requesting lock inside election loop anonymous block");
             let _x = {
-                //let mut server_state_inner = server_state.lock().unwrap();
+                let mut server_state_inner = self.server_state.lock().await;
                 tracing::debug!("got lock on server state inside election loop anonymous block, initiating votes maybe.");
-                //if server_state_inner.role == Role::Follower {
-                //    if server_state_inner.last_heartbeat.elapsed() > timeout {
+                if server_state_inner.role == Role::Follower {
+                    if server_state_inner.last_heartbeat.elapsed() > timeout {
                         // Request votes!
                         let vote_res = Self::initiate_vote(peer_clients.clone()).await;
                         tracing::info!("vote results:{:?}", vote_res);
-                //    }
-                //}
+                    }
+                }
                 tracing::debug!("got to end of inner vote loop anonymous block.");
             };
         }

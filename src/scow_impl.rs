@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use std::sync::{Arc, Mutex};
-
+use std::sync::Arc;
 
 use tokio::time::Instant;
+use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 
 use crate::db::Db;
@@ -105,7 +105,7 @@ impl ScowKeyValue for MyScowKeyValue {
             inner.term, 
             inner.candidate_id, 
             inner.last_log_index
-        );
+        ).await;
         Ok(Response::new(RequestVoteReply { term: server_result.0, vote_granted: server_result.1 }))
     }
 }
@@ -119,7 +119,7 @@ impl MyScowKeyValue<> {
         }
     }
 
-    pub fn server_request_vote(&self, candidate_term: u64, candidate_id: u64, candidate_last_index: u64) -> (u64, bool) {
+    pub async fn server_request_vote(&self, candidate_term: u64, candidate_id: u64, candidate_last_index: u64) -> (u64, bool) {
         tracing::debug!("about to ask for state mutex.");
         // TODO: we need to get the ServerState here somehow. Only have it be owned by one thing! Right now
         // that one thing is ElectionHandler, but that seems wrong. ServerStateManager should provide ServerState
@@ -127,7 +127,7 @@ impl MyScowKeyValue<> {
         // KV (tonic service) needs it in order to respond to vote requests and AppendEntries, and Handler types
         // need it to do their server maintenance stuff. But it should only "live" in one place!!!
 
-        let mut server_state = self.server_state.lock().unwrap();
+        let mut server_state = self.server_state.lock().await;
         
         tracing::debug!("got state mutex.");
         if candidate_term < server_state.current_term {
