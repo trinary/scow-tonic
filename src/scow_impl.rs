@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use std::error::Error;
 use std::sync::Arc;
 
 use tokio::time::Instant;
@@ -106,9 +107,19 @@ impl ScowKeyValue for MyScowKeyValue {
             inner.candidate_id, 
             inner.last_log_index
         ).await;
-        Ok(Response::new(RequestVoteReply { term: server_result.0, vote_granted: server_result.1 }))
+
+        match server_result {
+            Ok(res) => {
+                Ok(Response::new(RequestVoteReply { term: res.0, vote_granted: res.1 }))
+            },
+            Err(e) => {
+                tracing::error!("Failure result from server_request_vote: {:?}", e);
+                Err(Status::unknown("Failure result from server_request_vote"))
+            },
+        }
     }
 }
+
 
 impl MyScowKeyValue<> {
     pub fn new(server_state: Arc<Mutex<ServerState>>) -> Self {
@@ -119,7 +130,7 @@ impl MyScowKeyValue<> {
         }
     }
 
-    pub async fn server_request_vote(&self, candidate_term: u64, candidate_id: u64, candidate_last_index: u64) -> (u64, bool) {
+    pub async fn server_request_vote(&self, candidate_term: u64, candidate_id: u64, candidate_last_index: u64) -> Result<(u64, bool), Box<dyn Error>> {
         tracing::debug!("about to ask for state mutex.");
         // TODO: we need to get the ServerState here somehow. Only have it be owned by one thing! Right now
         // that one thing is ElectionHandler, but that seems wrong. ServerStateManager should provide ServerState
@@ -127,21 +138,30 @@ impl MyScowKeyValue<> {
         // KV (tonic service) needs it in order to respond to vote requests and AppendEntries, and Handler types
         // need it to do their server maintenance stuff. But it should only "live" in one place!!!
 
-        let mut server_state = self.server_state.lock().await;
-        
-        tracing::debug!("got state mutex.");
-        if candidate_term < server_state.current_term {
-            server_state.voted_for = None;
-            (server_state.current_term, false)
-        } else {
-            if (server_state.voted_for == None || server_state.voted_for == Some(candidate_id)) &&
-            candidate_last_index >= server_state.last_log_index {
-                server_state.voted_for = Some(candidate_id);
-                (server_state.current_term, true)
-            } else {
-                server_state.voted_for = None;
-                (server_state.current_term, false)
+        let server_state_result = self.server_state.try_lock();
+
+        match server_state_result {
+            Ok(mut state) => {
+                tracing::debug!("got state mutex.");
+                if candidate_term < state.current_term {
+                    state.voted_for = None;
+                    Ok((state.current_term, false))
+                } else {
+                    if (state.voted_for == None || state.voted_for == Some(candidate_id)) &&
+                    candidate_last_index >= state.last_log_index {
+                        state.voted_for = Some(candidate_id);
+                        Ok((state.current_term, true))
+                    } else {
+                        state.voted_for = None;
+                        Ok((state.current_term, false))
+                    }
+                }        
+            },
+            Err(e) => {
+                tracing::error!("Failed to acquire server state mutex in request_vote: {:?}", e);
+                Err(e.into())
             }
         }
+        
     }
 }
