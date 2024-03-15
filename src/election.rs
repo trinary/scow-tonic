@@ -6,7 +6,8 @@ use tokio::sync::Mutex;
 
 use crate::{scow_impl::{Role, ServerState}, scow_key_value_client::ScowKeyValueClient, Config, Peer, RequestVoteReply, RequestVoteRequest};
 
-
+#[path="./client_tools.rs"]
+mod client_tools;
 
 pub struct ElectionHandler {
     server_state: Arc<Mutex<ServerState>>,
@@ -15,10 +16,10 @@ pub struct ElectionHandler {
 }
 
 impl ElectionHandler {
-    pub fn new(server_state: Arc<Mutex<ServerState>>, config_arc: Arc<Config>, id: u64) -> Self {
+    pub fn new(server_state: Arc<Mutex<ServerState>>, config: Arc<Config>, id: u64) -> Self {
         Self {
             server_state: server_state,
-            config: config_arc,
+            config,
             id: id
         }
     }
@@ -34,7 +35,7 @@ impl ElectionHandler {
         
     
         for p in peer_configs.iter() {
-            let client = Self::build_client(p).await;
+            let client = client_tools::build_client(p);
             match client {
                 Ok(c) => peer_clients.push(c),
                 Err(e) => panic!("panic from build_client: {:?}", e),
@@ -50,7 +51,7 @@ impl ElectionHandler {
             interval.tick().await;
             tracing::debug!("requesting lock inside election loop anonymous block");
             let _x = {
-                let mut server_state_inner = self.server_state.lock().await;
+                let server_state_inner = self.server_state.lock().await;
                 tracing::debug!("got lock on server state inside election loop anonymous block, initiating votes maybe.");
                 if server_state_inner.role == Role::Follower {
                     if server_state_inner.last_heartbeat.elapsed() > timeout {
@@ -83,14 +84,5 @@ impl ElectionHandler {
             }
         }
         replies
-    }
-
-    async fn build_client(peer: &Peer) -> Result<ScowKeyValueClient<Channel>, Box<dyn std::error::Error>> {
-        if let Ok(uri) = peer.uri.parse() {
-            let endpoint = tonic::transport::channel::Channel::builder(uri);
-            Ok(ScowKeyValueClient::new(endpoint.connect_lazy()))
-        } else {
-            Err("invalid uri")?
-        }
     }
 }

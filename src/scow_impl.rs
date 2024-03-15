@@ -94,8 +94,15 @@ impl ScowKeyValue for MyScowKeyValue {
         }
 
         tracing::debug!("asking for server_state in append_entries");
-        //let mut state_inner = self.server_state.lock().unwrap();
-        //state_inner.last_heartbeat = Instant::now();
+        let state_result = self.server_state.try_lock();
+        
+        match state_result {
+            Ok(mut s) => {
+                s.last_heartbeat = Instant::now();                
+            },
+            Err(_) => todo!(),
+        }
+            
         tracing::debug!("DONE with server_state in append_entries");
         Ok(Response::new(AppendEntriesReply { term: 0, success: true}))
     }

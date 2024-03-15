@@ -9,10 +9,12 @@ use scow::scow_key_value_server::ScowKeyValueServer;
 
 use crate::scow_impl::{MyScowKeyValue, ServerState};
 use crate::election::ElectionHandler;
+use crate::heartbeat::Heartbeat;
 
 mod db;
 mod scow_impl;
 mod election;
+mod heartbeat;
 
 pub mod scow {
     tonic::include_proto!("scow");
@@ -66,14 +68,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = my_config.address.parse().unwrap();
     let scow_key_value = MyScowKeyValue::new(server_state.clone());
 
-    let election_handler = ElectionHandler::new(server_state.clone(), config_arc, cli.id);
+    let election_handler = ElectionHandler::new(server_state.clone(), config_arc.clone(), cli.id);
     let election_future = election_handler.run_election_loop();
+
+    let heartbeat_handler = Heartbeat::new(server_state.clone(), config_arc.clone(), cli.id);
+    let heartbeat_future = heartbeat_handler.run_heartbeat_loop();
 
     let server = Server::builder()
         .add_service(ScowKeyValueServer::new(scow_key_value))
         .serve(addr);
 
-    let _join_res = join!(server, election_future);
+    let _join_res = join!(server, election_future, heartbeat_future);
     
     Ok(())
 }
