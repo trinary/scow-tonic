@@ -49,14 +49,14 @@ impl Heartbeat {
 
         loop {
             heartbeat_interval.tick().await;
-            tracing::debug!("heartbeat loop run");
 
             let _x = {
-                let mut server_state_inner = self.server_state.lock().await;
-                tracing::debug!("got lock on server state inside heartbeat loop anonymous block");
-
+                tracing::info!("asking for server_state in heartbeat_loop inner");
+                let server_state_inner = self.server_state.lock().await;
+        
                 if server_state_inner.role == Role::Leader {
                     // we are the leader, issue AppendEntries heartbeats to peers
+                    tracing::info!("HEARTBEAT GOING OUT 💖💖💖💖💖");
                     Self::heartbeat_request(peer_clients.clone(), &server_state_inner, self.id).await;
 
                 }
@@ -77,7 +77,10 @@ impl Heartbeat {
             }).await;
 
             match res {
-                Ok(r) => replies.push(r.into_inner()),
+                Ok(r) => {
+                    tracing::info!("got heartbeat result: {:?}", r);
+                    replies.push(r.into_inner())
+                },
                 Err(e) => {
                     tracing::error!("err from heartbeat AppendEntries request: {:?}", e)
                 }

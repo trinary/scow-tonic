@@ -4,7 +4,7 @@ use rand::{thread_rng, Rng};
 use tonic::transport::Channel;
 use tokio::sync::Mutex;
 
-use crate::{scow_impl::{Role, ServerState}, scow_key_value_client::ScowKeyValueClient, Config, Peer, RequestVoteReply, RequestVoteRequest};
+use crate::{scow_impl::{LeaderState, Role, ServerState}, scow_key_value_client::ScowKeyValueClient, Config, Peer, RequestVoteReply, RequestVoteRequest};
 
 #[path="./client_tools.rs"]
 mod client_tools;
@@ -49,29 +49,46 @@ impl ElectionHandler {
         interval.tick().await;
         loop {
             interval.tick().await;
-            tracing::debug!("requesting lock inside election loop anonymous block");
             let _x = {
-                let server_state_inner = self.server_state.lock().await;
-                tracing::debug!("got lock on server state inside election loop anonymous block, initiating votes maybe.");
+                let mut server_state_inner = self.server_state.lock().await;
                 if server_state_inner.role == Role::Follower {
                     if server_state_inner.last_heartbeat.elapsed() > timeout {
+                        // increment term!
+                        server_state_inner.current_term = server_state_inner.current_term + 1;
                         // Request votes!
-                        let vote_res = Self::initiate_vote(peer_clients.clone()).await;
+                        let vote_res = self.initiate_vote(&server_state_inner, peer_clients.clone()).await;
                         tracing::info!("vote results:{:?}", vote_res);
+
+                        // how many votes do we need?!?
+                        let vote_threshold = (peer_clients.len() / 2) + 1;
+                        // the requester "votes for itself", can we just say we automatically have 1 vote?
+
+                        let granted_votes = vote_res
+                            .iter()
+                            .fold(1, |acc, x| if x.vote_granted { acc + 1} else { acc });
+                        if granted_votes >= vote_threshold {
+                            // we win!
+                            tracing::info!("WE WIN ✌️✌️✌️✌️✌️✌️");
+                            server_state_inner.role = Role::Leader;
+                            server_state_inner.leader_state = Some(LeaderState::new(server_state_inner.last_log_index));
+                        } else {
+                            // we don't win!
+                            tracing::info!("WE DO NOT WIN 😢😢😢😢😢😢");
+                        }
                     }
                 }
-                tracing::debug!("got to end of inner vote loop anonymous block.");
             };
         }
     }
 
-    async fn initiate_vote(peer_clients: Vec<ScowKeyValueClient<Channel>>) -> Vec<RequestVoteReply> {
+    async fn initiate_vote(&self, server_state: &ServerState, peer_clients: Vec<ScowKeyValueClient<Channel>>) -> Vec<RequestVoteReply> {
         let mut replies = vec![];
 
         for mut client in peer_clients {
+            tracing::info!("issuing request_vote to {:?}", client);
             let res = client.request_vote(RequestVoteRequest {
-                term: 1,
-                candidate_id: 1,
+                term: server_state.current_term,
+                candidate_id: self.id,
                 last_log_index: 2,
                 last_log_term: 3,
             }).await;

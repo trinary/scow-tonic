@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use std::error::Error;
+use std::hash::Hash;
 use std::sync::Arc;
 
 use tokio::time::Instant;
@@ -46,6 +47,18 @@ pub struct LeaderState {
     next_index: HashMap<u64, u64>,
     /// for each server, index of highest log entry known to be replicated on server (initialized to 0, increases monotonically)
     match_index: HashMap<u64, u64>,
+}
+impl LeaderState {
+    pub(crate) fn new(leader_last_log: u64) -> LeaderState {
+        let mut this = Self {
+            next_index: HashMap::new(),
+            match_index: HashMap::new(),
+        };
+
+        this.next_index.insert(1,leader_last_log);
+        this.match_index.insert(1, 0);
+        this
+    }
 }
 
 pub struct MyScowKeyValue {
@@ -93,18 +106,20 @@ impl ScowKeyValue for MyScowKeyValue {
             self.db.set(&i.key, &i.value);
         }
 
-        tracing::debug!("asking for server_state in append_entries");
-        let state_result = self.server_state.try_lock();
+        tracing::info!("asking for server_state in append_entries");
+        let mut state_result = self.server_state.lock().await;
         
-        match state_result {
-            Ok(mut s) => {
-                s.last_heartbeat = Instant::now();                
-            },
-            Err(_) => todo!(),
-        }
-            
-        tracing::debug!("DONE with server_state in append_entries");
-        Ok(Response::new(AppendEntriesReply { term: 0, success: true}))
+        // match state_result {
+        //     Ok(mut s) => {
+        //         s.last_heartbeat = Instant::now();                
+        //     },
+        //     Err(_) => todo!(),
+        // }
+
+        state_result.last_heartbeat = Instant::now();
+        // we got a heartbeat from someone, so someone is a leader and we should become a follower.
+        state_result.role = Role::Follower;
+        Ok(Response::new(AppendEntriesReply { term: state_result.current_term, success: true}))
     }
 
     async fn request_vote(&self, request: Request<RequestVoteRequest>) -> Result<Response<RequestVoteReply>, Status> {
@@ -138,18 +153,13 @@ impl MyScowKeyValue<> {
     }
 
     pub async fn server_request_vote(&self, candidate_term: u64, candidate_id: u64, candidate_last_index: u64) -> Result<(u64, bool), Box<dyn Error>> {
-        tracing::debug!("about to ask for state mutex.");
-        // TODO: we need to get the ServerState here somehow. Only have it be owned by one thing! Right now
-        // that one thing is ElectionHandler, but that seems wrong. ServerStateManager should provide ServerState
-        // to both ElectionHandler (and soon HeartbeatHandler or whatever else) as well as the KeyValue piece
-        // KV (tonic service) needs it in order to respond to vote requests and AppendEntries, and Handler types
-        // need it to do their server maintenance stuff. But it should only "live" in one place!!!
+        tracing::info!("about to ask for state mutex in server_request_vote");
 
-        let server_state_result = self.server_state.try_lock();
-
+        let server_state_result = self.server_state.try_lock(); // only one try_lock? idk
+        // if try_lock fails here, that means we're already requesting votes from other servers.
+        // Maybe the thing to do here is successfully NOT grant a vote if we know we're requesting? Does that make any sense?
         match server_state_result {
             Ok(mut state) => {
-                tracing::debug!("got state mutex.");
                 if candidate_term < state.current_term {
                     state.voted_for = None;
                     Ok((state.current_term, false))
