@@ -22,9 +22,9 @@ pub struct ElectionHandler {
 impl ElectionHandler {
     pub fn new(server_state: Arc<Mutex<ServerState>>, config: Arc<Config>, id: u64) -> Self {
         Self {
-            server_state: server_state,
+            server_state,
             config,
-            id: id,
+            id,
         }
     }
     pub async fn run_election_loop(&self) -> Result<(), Box<dyn Error>> {
@@ -32,7 +32,7 @@ impl ElectionHandler {
         Ok(())
     }
 
-    async fn election_loop(&self) -> () {
+    async fn election_loop(&self) {
         let mut peer_clients: Vec<ScowKeyValueClient<Channel>> = vec![];
         let mut rng = thread_rng();
         let peer_configs: Vec<&Peer> = self
@@ -59,36 +59,38 @@ impl ElectionHandler {
         interval.tick().await;
         loop {
             interval.tick().await;
-            let _x = {
+            {
                 let mut server_state_inner = self.server_state.lock().await;
-                if server_state_inner.role == Role::Follower {
-                    if server_state_inner.last_heartbeat.elapsed() > timeout {
-                        // increment term!
-                        server_state_inner.current_term = server_state_inner.current_term + 1;
-                        // Request votes!
-                        let vote_res = self
-                            .initiate_vote(&server_state_inner, peer_clients.clone())
-                            .await;
-                        tracing::info!("vote results:{:?}", vote_res);
+                if server_state_inner.role == Role::Follower
+                    && server_state_inner.last_heartbeat.elapsed() > timeout
+                {
+                    // increment term!
+                    server_state_inner.current_term += 1;
+                    // set role!
+                    server_state_inner.role = Role::Candidate;
+                    // Request votes!
+                    let vote_res = self
+                        .initiate_vote(&server_state_inner, peer_clients.clone())
+                        .await;
+                    tracing::info!("vote results:{:?}", vote_res);
 
-                        // how many votes do we need?!?
-                        let vote_threshold = (peer_clients.len() / 2) + 1;
-                        // the requester "votes for itself", can we just say we automatically have 1 vote?
+                    // how many votes do we need?!?
+                    let vote_threshold = (peer_clients.len() / 2) + 1;
+                    // the requester "votes for itself", can we just say we automatically have 1 vote?
 
-                        let granted_votes =
-                            vote_res
-                                .iter()
-                                .fold(1, |acc, x| if x.vote_granted { acc + 1 } else { acc });
-                        if granted_votes >= vote_threshold {
-                            // we win!
-                            tracing::info!("WE WIN ✌️✌️✌️✌️✌️✌️");
-                            server_state_inner.role = Role::Leader;
-                            server_state_inner.leader_state =
-                                Some(LeaderState::new(server_state_inner.last_log_index));
-                        } else {
-                            // we don't win!
-                            tracing::info!("WE DO NOT WIN 😢😢😢😢😢😢");
-                        }
+                    let granted_votes =
+                        vote_res
+                            .iter()
+                            .fold(1, |acc, x| if x.vote_granted { acc + 1 } else { acc });
+                    if granted_votes >= vote_threshold {
+                        // we win!
+                        tracing::info!("WE WIN ✌️✌️✌️✌️✌️✌️");
+                        server_state_inner.role = Role::Leader;
+                        server_state_inner.leader_state =
+                            Some(LeaderState::new(server_state_inner.last_log_index));
+                    } else {
+                        // we don't win!
+                        tracing::info!("WE DO NOT WIN 😢😢😢😢😢😢");
                     }
                 }
             };

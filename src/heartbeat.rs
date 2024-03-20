@@ -1,6 +1,6 @@
 use std::{error::Error, sync::Arc, time::Duration};
 
-use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::Mutex;
 use tonic::transport::Channel;
 
 use crate::{
@@ -21,9 +21,9 @@ pub struct Heartbeat {
 impl Heartbeat {
     pub fn new(server_state: Arc<Mutex<ServerState>>, config: Arc<Config>, id: u64) -> Self {
         Self {
-            server_state: server_state,
-            config: config,
-            id: id,
+            server_state,
+            config,
+            id,
         }
     }
 
@@ -58,7 +58,7 @@ impl Heartbeat {
         loop {
             heartbeat_interval.tick().await;
 
-            let _x = {
+            {
                 tracing::info!("asking for server_state in heartbeat_loop inner");
                 let server_state_inner = self.server_state.lock().await;
 

@@ -9,7 +9,8 @@ pub fn build_client(
 ) -> Result<ScowKeyValueClient<Channel>, Box<dyn std::error::Error>> {
     if let Ok(uri) = peer.uri.parse() {
         let endpoint = tonic::transport::channel::Channel::builder(uri)
-            .connect_timeout(Duration::from_millis(100));
+            .connect_timeout(Duration::from_millis(100))
+            .timeout(Duration::from_millis(100));
         Ok(ScowKeyValueClient::new(endpoint.connect_lazy()))
     } else {
         Err("invalid uri")?

@@ -171,7 +171,7 @@ impl MyScowKeyValue {
             server_state.voted_for = None;
             Ok((server_state.current_term, false))
         } else {
-            if (server_state.voted_for == None || server_state.voted_for == Some(candidate_id))
+            if (server_state.voted_for.is_none() || server_state.voted_for == Some(candidate_id))
                 && candidate_last_index >= server_state.last_log_index
             {
                 server_state.voted_for = Some(candidate_id);
