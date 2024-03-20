@@ -33,7 +33,6 @@ struct Shared {
     state: Mutex<State>,
 }
 
-
 #[derive(Debug)]
 struct State {
     entries: HashMap<String, String>,

@@ -3,15 +3,19 @@ use std::{error::Error, sync::Arc, time::Duration};
 use tokio::sync::{Mutex, MutexGuard};
 use tonic::transport::Channel;
 
-use crate::{scow_impl::{Role, ServerState}, scow_key_value_client::ScowKeyValueClient, AppendEntriesReply, AppendEntriesRequest, Config, Peer};
+use crate::{
+    scow_impl::{Role, ServerState},
+    scow_key_value_client::ScowKeyValueClient,
+    AppendEntriesReply, AppendEntriesRequest, Config, Peer,
+};
 
-#[path="./client_tools.rs"]
+#[path = "./client_tools.rs"]
 mod client_tools;
 
 pub struct Heartbeat {
     server_state: Arc<Mutex<ServerState>>,
     config: Arc<Config>,
-    id: u64
+    id: u64,
 }
 
 impl Heartbeat {
@@ -23,7 +27,6 @@ impl Heartbeat {
         }
     }
 
-
     pub async fn run_heartbeat_loop(&self) -> Result<(), Box<dyn Error>> {
         self.heartbeat_loop().await;
         Ok(())
@@ -32,7 +35,12 @@ impl Heartbeat {
     async fn heartbeat_loop(&self) -> () {
         let mut peer_clients: Vec<ScowKeyValueClient<Channel>> = vec![];
 
-        let peer_configs: Vec<&Peer> = self.config.servers.iter().filter(|s| s.id != self.id).collect();
+        let peer_configs: Vec<&Peer> = self
+            .config
+            .servers
+            .iter()
+            .filter(|s| s.id != self.id)
+            .collect();
 
         for p in peer_configs.iter() {
             let client = client_tools::build_client(p);
@@ -40,7 +48,7 @@ impl Heartbeat {
                 Ok(c) => peer_clients.push(c),
                 Err(e) => {
                     tracing::error!("failed to build client: {:?}", e);
-                } 
+                }
             }
         }
 
@@ -53,34 +61,43 @@ impl Heartbeat {
             let _x = {
                 tracing::info!("asking for server_state in heartbeat_loop inner");
                 let server_state_inner = self.server_state.lock().await;
-        
+
                 if server_state_inner.role == Role::Leader {
                     // we are the leader, issue AppendEntries heartbeats to peers
-                    tracing::info!("HEARTBEAT GOING OUT, term {:?} 💖💖💖💖💖", &server_state_inner.current_term);
-                    Self::heartbeat_request(peer_clients.clone(), &server_state_inner, self.id).await;
-
+                    tracing::info!(
+                        "HEARTBEAT GOING OUT, term {:?} 💖💖💖💖💖",
+                        &server_state_inner.current_term
+                    );
+                    Self::heartbeat_request(peer_clients.clone(), &server_state_inner, self.id)
+                        .await;
                 }
             };
         }
     }
 
-    async fn heartbeat_request(peer_clients: Vec<ScowKeyValueClient<Channel>>, server_state: &ServerState, id: u64) -> Vec<AppendEntriesReply> {
+    async fn heartbeat_request(
+        peer_clients: Vec<ScowKeyValueClient<Channel>>,
+        server_state: &ServerState,
+        id: u64,
+    ) -> Vec<AppendEntriesReply> {
         let mut replies = vec![];
         for mut client in peer_clients {
-            let res = client.append_entries(AppendEntriesRequest {
-                leader_term: server_state.current_term,
-                leader_id: id,
-                prev_log_index: 2,
-                prev_log_term: 3,
-                leader_commit: 1,
-                entries: vec![],
-            }).await;
+            let res = client
+                .append_entries(AppendEntriesRequest {
+                    leader_term: server_state.current_term,
+                    leader_id: id,
+                    prev_log_index: 2,
+                    prev_log_term: 3,
+                    leader_commit: 1,
+                    entries: vec![],
+                })
+                .await;
 
             match res {
                 Ok(r) => {
                     tracing::info!("got heartbeat result: {:?}", r);
                     replies.push(r.into_inner())
-                },
+                }
                 Err(e) => {
                     tracing::error!("err from heartbeat AppendEntries request: {:?}", e)
                 }

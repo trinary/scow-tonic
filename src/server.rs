@@ -1,20 +1,20 @@
+use clap::Parser;
+use scow::scow_key_value_server::ScowKeyValueServer;
+use scow::*;
+use serde::Deserialize;
 use std::sync::Arc;
 use tokio::join;
 use tokio::sync::Mutex;
 use tonic::transport::Server;
-use clap::Parser;
-use serde::Deserialize;
-use scow::*;
-use scow::scow_key_value_server::ScowKeyValueServer;
 
-use crate::scow_impl::{MyScowKeyValue, ServerState};
 use crate::election::ElectionHandler;
 use crate::heartbeat::Heartbeat;
+use crate::scow_impl::{MyScowKeyValue, ServerState};
 
 mod db;
-mod scow_impl;
 mod election;
 mod heartbeat;
+mod scow_impl;
 
 pub mod scow {
     tonic::include_proto!("scow");
@@ -38,7 +38,7 @@ struct Config {
 
 #[derive(Deserialize, Debug, Clone)]
 struct Peer {
-    /// unique identifier number for this server. 
+    /// unique identifier number for this server.
     id: u64,
     /// Some string that can be parsed into a SocketAddr
     address: String,
@@ -46,21 +46,23 @@ struct Peer {
     uri: String,
 }
 
-
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
-    .with_max_level(tracing::Level::INFO)
-    .init();
+        .with_max_level(tracing::Level::INFO)
+        .init();
 
     let cli = Cli::parse();
 
     let config_file = std::fs::File::open("config.yaml")?;
-    let config_arc:Arc<Config> = Arc::new(serde_yaml::from_reader(config_file)?);
+    let config_arc: Arc<Config> = Arc::new(serde_yaml::from_reader(config_file)?);
 
-    let my_config = config_arc.servers.iter().find(|s| s.id == cli.id).expect("couldn't find my config.");
-    
+    let my_config = config_arc
+        .servers
+        .iter()
+        .find(|s| s.id == cli.id)
+        .expect("couldn't find my config.");
+
     tracing::info!("MY config: {:?}", my_config);
 
     let server_state = Arc::new(Mutex::new(ServerState::new()));
@@ -79,7 +81,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .serve(addr);
 
     let _join_res = join!(server, election_future, heartbeat_future);
-    
+
     Ok(())
 }
-
