@@ -4,20 +4,20 @@ use std::error::Error;
 use std::hash::Hash;
 use std::sync::Arc;
 
-use tokio::time::Instant;
 use tokio::sync::Mutex;
+use tokio::time::Instant;
 use tonic::{Request, Response, Status};
 
 use crate::db::Db;
-use crate::{scow::*, Peer};
 use crate::scow_key_value_server::ScowKeyValue;
+use crate::{scow::*, Peer};
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub enum Role {
     #[default]
-    Follower, 
-    Leader, 
-    Candidate
+    Follower,
+    Leader,
+    Candidate,
 }
 
 pub struct ServerState {
@@ -37,7 +37,7 @@ impl ServerState {
             voted_for: None,
             last_heartbeat: Instant::now(), // this could cause problems, it should be some min value like epoch.
             last_log_index: 0,
-            leader_state: None
+            leader_state: None,
         }
     }
 }
@@ -55,7 +55,7 @@ impl LeaderState {
             match_index: HashMap::new(),
         };
 
-        this.next_index.insert(1,leader_last_log);
+        this.next_index.insert(1, leader_last_log);
         this.match_index.insert(1, 0);
         this
     }
@@ -74,7 +74,6 @@ impl ScowKeyValue for MyScowKeyValue {
         &self,
         _request: Request<StatusRequest>,
     ) -> Result<Response<StatusReply>, Status> {
-
         let reply = StatusReply {
             status: "Status: OK".to_string(),
         };
@@ -85,22 +84,21 @@ impl ScowKeyValue for MyScowKeyValue {
         let db_response = self.db.get(request.into_inner().key.as_str());
 
         match db_response {
-            Some(s) => {
-                Ok(Response::new(GetReply {
-                    value: s
-                }))
-            },
+            Some(s) => Ok(Response::new(GetReply { value: s })),
             None => Err(Status::not_found("key not found")),
-        }        
+        }
     }
 
     async fn set(&self, request: Request<SetRequest>) -> Result<Response<SetReply>, Status> {
         let inner = request.into_inner();
         let _db_response = self.db.set(&inner.key, &inner.value);
-        Ok(Response::new(SetReply { success: true}))
+        Ok(Response::new(SetReply { success: true }))
     }
 
-    async fn append_entries(&self, request: Request<AppendEntriesRequest>) -> Result<Response<AppendEntriesReply>, Status> {
+    async fn append_entries(
+        &self,
+        request: Request<AppendEntriesRequest>,
+    ) -> Result<Response<AppendEntriesReply>, Status> {
         let inner = request.into_inner();
         for i in inner.entries {
             self.db.set(&i.key, &i.value);
@@ -108,42 +106,48 @@ impl ScowKeyValue for MyScowKeyValue {
 
         tracing::info!("asking for server_state in append_entries");
         let mut state_result = self.server_state.lock().await;
-        
+
         // match state_result {
         //     Ok(mut s) => {
-        //         s.last_heartbeat = Instant::now();                
+        //         s.last_heartbeat = Instant::now();
         //     },
         //     Err(_) => todo!(),
         // }
 
         state_result.last_heartbeat = Instant::now();
         // we got a heartbeat from someone, so someone is a leader and we should become a follower.
+        // and set current term to theirs.
         state_result.role = Role::Follower;
-        Ok(Response::new(AppendEntriesReply { term: state_result.current_term, success: true}))
+        state_result.current_term = inner.leader_term;
+        Ok(Response::new(AppendEntriesReply {
+            term: state_result.current_term,
+            success: true,
+        }))
     }
 
-    async fn request_vote(&self, request: Request<RequestVoteRequest>) -> Result<Response<RequestVoteReply>, Status> {
+    async fn request_vote(
+        &self,
+        request: Request<RequestVoteRequest>,
+    ) -> Result<Response<RequestVoteReply>, Status> {
         let inner = request.into_inner();
-        let server_result = self.server_request_vote(
-            inner.term, 
-            inner.candidate_id, 
-            inner.last_log_index
-        ).await;
+        let server_result = self
+            .server_request_vote(inner.term, inner.candidate_id, inner.last_log_index)
+            .await;
 
         match server_result {
-            Ok(res) => {
-                Ok(Response::new(RequestVoteReply { term: res.0, vote_granted: res.1 }))
-            },
+            Ok(res) => Ok(Response::new(RequestVoteReply {
+                term: res.0,
+                vote_granted: res.1,
+            })),
             Err(e) => {
                 tracing::error!("Failure result from server_request_vote: {:?}", e);
                 Err(Status::unknown("Failure result from server_request_vote"))
-            },
+            }
         }
     }
 }
 
-
-impl MyScowKeyValue<> {
+impl MyScowKeyValue {
     pub fn new(server_state: Arc<Mutex<ServerState>>) -> Self {
         MyScowKeyValue {
             db: Db::new(),
@@ -152,33 +156,30 @@ impl MyScowKeyValue<> {
         }
     }
 
-    pub async fn server_request_vote(&self, candidate_term: u64, candidate_id: u64, candidate_last_index: u64) -> Result<(u64, bool), Box<dyn Error>> {
+    pub async fn server_request_vote(
+        &self,
+        candidate_term: u64,
+        candidate_id: u64,
+        candidate_last_index: u64,
+    ) -> Result<(u64, bool), Box<dyn Error>> {
         tracing::info!("about to ask for state mutex in server_request_vote");
 
-        let server_state_result = self.server_state.try_lock(); // only one try_lock? idk
-        // if try_lock fails here, that means we're already requesting votes from other servers.
-        // Maybe the thing to do here is successfully NOT grant a vote if we know we're requesting? Does that make any sense?
-        match server_state_result {
-            Ok(mut state) => {
-                if candidate_term < state.current_term {
-                    state.voted_for = None;
-                    Ok((state.current_term, false))
-                } else {
-                    if (state.voted_for == None || state.voted_for == Some(candidate_id)) &&
-                    candidate_last_index >= state.last_log_index {
-                        state.voted_for = Some(candidate_id);
-                        Ok((state.current_term, true))
-                    } else {
-                        state.voted_for = None;
-                        Ok((state.current_term, false))
-                    }
-                }        
-            },
-            Err(e) => {
-                tracing::error!("Failed to acquire server state mutex in request_vote: {:?}", e);
-                Err(e.into())
+        let mut server_state = self.server_state.lock().await; // only one try_lock? idk
+                                                               // if try_lock fails here, that means we're already requesting votes from other servers.
+                                                               // Maybe the thing to do here is successfully NOT grant a vote if we know we're requesting? Does that make any sense?
+        if candidate_term < server_state.current_term {
+            server_state.voted_for = None;
+            Ok((server_state.current_term, false))
+        } else {
+            if (server_state.voted_for == None || server_state.voted_for == Some(candidate_id))
+                && candidate_last_index >= server_state.last_log_index
+            {
+                server_state.voted_for = Some(candidate_id);
+                Ok((server_state.current_term, true))
+            } else {
+                server_state.voted_for = None;
+                Ok((server_state.current_term, false))
             }
         }
-        
     }
 }

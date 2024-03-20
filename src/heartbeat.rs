@@ -56,7 +56,7 @@ impl Heartbeat {
         
                 if server_state_inner.role == Role::Leader {
                     // we are the leader, issue AppendEntries heartbeats to peers
-                    tracing::info!("HEARTBEAT GOING OUT 💖💖💖💖💖");
+                    tracing::info!("HEARTBEAT GOING OUT, term {:?} 💖💖💖💖💖", &server_state_inner.current_term);
                     Self::heartbeat_request(peer_clients.clone(), &server_state_inner, self.id).await;
 
                 }
