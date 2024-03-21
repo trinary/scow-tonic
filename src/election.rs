@@ -1,7 +1,7 @@
 use std::{error::Error, sync::Arc, time::Duration};
 
 use rand::{thread_rng, Rng};
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, time::Instant};
 use tonic::transport::Channel;
 
 use crate::{
@@ -61,7 +61,7 @@ impl ElectionHandler {
             interval.tick().await;
             {
                 let mut server_state_inner = self.server_state.lock().await;
-                if server_state_inner.role == Role::Follower
+                if server_state_inner.role == Role::Follower || server_state_inner.role == Role::Candidate
                     && server_state_inner.last_heartbeat.elapsed() > timeout
                 {
                     // increment term!
@@ -92,6 +92,9 @@ impl ElectionHandler {
                         // we don't win!
                         tracing::info!("WE DO NOT WIN 😢😢😢😢😢😢");
                     }
+
+                    // reset heartbeat timer maybe? These elections are chaotic rn
+                    server_state_inner.last_heartbeat = Instant::now();
                 }
             };
         }

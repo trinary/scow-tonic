@@ -34,6 +34,8 @@ struct Config {
     election_timeout_min_ms: u32,
     /// Maximum number of milliseconds to wait for a heartbeat before triggering an election.
     election_timeout_max_ms: u32,
+    /// Number of milliseconds between each heartbeat from the leader
+    heartbeat_interval_ms: u32,
 }
 
 #[derive(Deserialize, Debug, Clone)]

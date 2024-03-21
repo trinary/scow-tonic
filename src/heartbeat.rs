@@ -52,7 +52,7 @@ impl Heartbeat {
             }
         }
 
-        let mut heartbeat_interval = tokio::time::interval(Duration::from_millis(500));
+        let mut heartbeat_interval = tokio::time::interval(Duration::from_millis(self.config.heartbeat_interval_ms.into()));
         heartbeat_interval.tick().await;
 
         loop {
@@ -60,7 +60,7 @@ impl Heartbeat {
 
             {
                 tracing::info!("asking for server_state in heartbeat_loop inner");
-                let server_state_inner = self.server_state.lock().await;
+                let mut server_state_inner = self.server_state.lock().await;
 
                 if server_state_inner.role == Role::Leader {
                     // we are the leader, issue AppendEntries heartbeats to peers
@@ -68,8 +68,16 @@ impl Heartbeat {
                         "HEARTBEAT GOING OUT, term {:?} 💖💖💖💖💖",
                         &server_state_inner.current_term
                     );
-                    Self::heartbeat_request(peer_clients.clone(), &server_state_inner, self.id)
+                    let heartbeat_replies = Self::heartbeat_request(peer_clients.clone(), &server_state_inner, self.id)
                         .await;
+
+                    // is anyone ahead of us?
+                    for reply in heartbeat_replies {
+                        if reply.term >= server_state_inner.current_term {
+                            server_state_inner.current_term = reply.term;
+                            server_state_inner.role = Role::Follower;
+                        }
+                    }
                 }
             };
         }
