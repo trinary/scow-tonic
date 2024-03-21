@@ -1,6 +1,6 @@
 use std::{error::Error, sync::Arc, time::Duration};
 
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, time::Instant};
 use tonic::transport::Channel;
 
 use crate::{
@@ -63,11 +63,13 @@ impl Heartbeat {
                 let mut server_state_inner = self.server_state.lock().await;
 
                 if server_state_inner.role == Role::Leader {
-                    // we are the leader, issue AppendEntries heartbeats to peers
+                    // we are the leader
+                    server_state_inner.last_heartbeat = Instant::now(); // assume we are up to date....idk about this.
                     tracing::info!(
                         "HEARTBEAT GOING OUT, term {:?} 💖💖💖💖💖",
                         &server_state_inner.current_term
                     );
+                    // issue AppendEntries heartbeats to peers
                     let heartbeat_replies = Self::heartbeat_request(peer_clients.clone(), &server_state_inner, self.id)
                         .await;
 

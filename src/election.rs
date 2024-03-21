@@ -53,16 +53,16 @@ impl ElectionHandler {
         let interval_range =
             self.config.election_timeout_min_ms as u64..self.config.election_timeout_max_ms as u64;
 
-        let timeout = Duration::from_millis(1500);
         let mut interval =
             tokio::time::interval(Duration::from_millis(rng.gen_range(interval_range.clone())));
-        interval.tick().await;
         loop {
             interval.tick().await;
             {
                 let mut server_state_inner = self.server_state.lock().await;
-                if server_state_inner.role == Role::Follower || server_state_inner.role == Role::Candidate
-                    && server_state_inner.last_heartbeat.elapsed() > timeout
+                let elapsed = server_state_inner.last_heartbeat.elapsed();
+                tracing::info!("TIME SINCE LAST 💞: {:?}, period: {:?}", elapsed, interval.period());
+                if (server_state_inner.role == Role::Follower || server_state_inner.role == Role::Candidate)
+                    && elapsed > interval.period()
                 {
                     // increment term!
                     server_state_inner.current_term += 1;
@@ -77,6 +77,7 @@ impl ElectionHandler {
                     // how many votes do we need?!?
                     let vote_threshold = (peer_clients.len() / 2) + 1;
                     // the requester "votes for itself", can we just say we automatically have 1 vote?
+                    // Or do we need to request_vote from ourselves? We don't have a client to ourselves right now.
 
                     let granted_votes =
                         vote_res

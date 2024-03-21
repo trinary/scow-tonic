@@ -177,7 +177,7 @@ impl MyScowKeyValue {
         let mut server_state = self.server_state.lock().await; // only one try_lock? idk
                                                                // if try_lock fails here, that means we're already requesting votes from other servers.
                                                                // Maybe the thing to do here is successfully NOT grant a vote if we know we're requesting? Does that make any sense?
-        if candidate_term < server_state.current_term {
+        if candidate_term <= server_state.current_term {
             server_state.voted_for = None;
             Ok((server_state.current_term, false))
         } else {
