@@ -64,7 +64,6 @@ impl LeaderState {
 pub struct MyScowKeyValue {
     db: Db,
     peers: Vec<Peer>,
-    // TODO: so here we are. lifetime specifier required for this.
     server_state: Arc<Mutex<ServerState>>,
 }
 
@@ -119,18 +118,19 @@ impl ScowKeyValue for MyScowKeyValue {
         // and set current term to theirs.
         // that is, if their term is greater than ours
 
-        if inner.leader_term >= state_result.current_term { // shouldnt be possible to have an equal term, but just in case?
-            state_result.role = Role::Follower;
+        if inner.leader_term >= state_result.current_term {
+            // shouldnt be possible to have an equal term, but just in case?
+            state_result.role = Role::Follower; // does this fuck up if we're a candidate when this happens?
             state_result.current_term = inner.leader_term;
             Ok(Response::new(AppendEntriesReply {
                 term: state_result.current_term,
                 success: true,
-            }))    
+            }))
         } else {
             // the leader is further behind in terms than we are!
             Ok(Response::new(AppendEntriesReply {
                 term: state_result.current_term,
-                success: false
+                success: false,
             }))
         }
     }

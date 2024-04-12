@@ -1,10 +1,16 @@
-use std::{error::Error, sync::Arc, time::Duration};
+use std::{error::Error, future::Future, sync::Arc, thread, time::Duration};
 
+use futures::stream::FuturesUnordered;
 use rand::{thread_rng, Rng};
-use tokio::{sync::Mutex, time::Instant};
+use tokio::{
+    sync::Mutex,
+    task::{JoinError, JoinSet},
+    time::{timeout, Instant},
+};
 use tonic::transport::Channel;
 
 use crate::{
+    scow,
     scow_impl::{LeaderState, Role, ServerState},
     scow_key_value_client::ScowKeyValueClient,
     Config, Peer, RequestVoteReply, RequestVoteRequest,
@@ -60,9 +66,17 @@ impl ElectionHandler {
             {
                 let mut server_state_inner = self.server_state.lock().await;
                 let elapsed = server_state_inner.last_heartbeat.elapsed();
-                tracing::info!("TIME SINCE LAST 💞: {:?}, period: {:?}", elapsed, interval.period());
-                if (server_state_inner.role == Role::Follower || server_state_inner.role == Role::Candidate)
-                    && elapsed > interval.period()
+                tracing::info!(
+                    "TIME SINCE LAST 💞: {:?}, period: {:?}",
+                    elapsed,
+                    interval.period()
+                );
+                if (server_state_inner.role == Role::Follower
+                    || server_state_inner.role == Role::Candidate)
+                    && elapsed > interval.period() // TODO: I think this is wrong, we need to check more often for a heartbeat
+                    // The way it should work:
+                    // instead of polling on this long interval:
+                    // set a timeout that gets canceled and reset each time we get a heartbeat
                 {
                     // increment term!
                     server_state_inner.current_term += 1;
@@ -128,4 +142,85 @@ impl ElectionHandler {
         }
         replies
     }
+
+    async fn timeout_heartbeat_loop(&self) {
+        let mut peer_clients: Vec<ScowKeyValueClient<Channel>> = vec![];
+        let mut rng = thread_rng();
+        let peer_configs: Vec<&Peer> = self
+            .config
+            .servers
+            .iter()
+            .filter(|s| s.id != self.id)
+            .collect();
+
+        for p in peer_configs.iter() {
+            let client = client_tools::build_client(p);
+            match client {
+                Ok(c) => peer_clients.push(c),
+                Err(e) => panic!("panic from build_client: {:?}", e),
+            }
+        }
+        
+        let interval_range =
+            self.config.election_timeout_min_ms as u64..self.config.election_timeout_max_ms as u64;
+
+        let mut interval =
+            tokio::time::interval(Duration::from_millis(rng.gen_range(interval_range.clone())));
+
+
+        let mut this_timeout = timeout(interval.period(), async move {
+            // our 
+        });
+
+    }
+
+    // async fn initiate_vote_scoped_thread(
+    //     &self,
+    //     server_state: &ServerState,
+    //     peer_clients: Vec<ScowKeyValueClient<Channel>>,
+    // ) -> Vec<RequestVoteReply> {
+    //     let mut replies = vec![];
+
+    //     for mut client in peer_clients {
+    //         s.spawn(move || {
+    //             let res = client.request_vote(RequestVoteRequest {
+    //                 term: server_state.current_term,
+    //                 candidate_id: self.id,
+    //                 last_log_index: 2,
+    //                 last_log_term: 3,
+    //             });
+    //             // this fails because we need to await the future, but Scope#spawn does not support async blocks
+    //             // match res {
+    //             //     Ok(r) => replies.push(r.into_inner()),
+    //             //     Err(e) => {
+    //             //         tracing::error!("err from getting vote reply: {:?}", e)
+    //             //     }
+    //             // }
+    //         });
+    //     }
+    //     replies
+    // }
+
+    // async fn initiate_vote_futures_un(
+    //     &self,
+    //     server_state: &ServerState,
+    //     peer_clients: Vec<ScowKeyValueClient<Channel>>,
+    // ) -> Vec<RequestVoteReply> {
+
+    //     let tasks = peer_clients.iter().map(|c| tokio::spawn(async move {
+    //         let res = c.request_vote(RequestVoteRequest {
+    //             term: server_state.current_term,
+    //             candidate_id: self.id,
+    //             last_log_index: 2,
+    //             last_log_term: 3,
+    //         }).await;
+    //         match res {
+    //             Ok(r) => r.into_inner(),
+    //             Err(e) => todo!(),
+    //         }
+    //     })).collect::<FuturesUnordered<_>>();
+
+    //     let results = futures::future::join_all(tasks).await;
+    //     results.iter().filter(|res| res.is_ok()).filter_map(|r| <Result<scow::RequestVoteReply, JoinError> as Clone>::clone(&r).ok()).collect()
+    // }
 }

@@ -64,14 +64,15 @@ impl Heartbeat {
 
                 if server_state_inner.role == Role::Leader {
                     // we are the leader
-                    server_state_inner.last_heartbeat = Instant::now(); // assume we are up to date....idk about this.
+                    server_state_inner.last_heartbeat = Instant::now(); // assume we are up to date so we don't trigger an election on ourselves....idk about this.
                     tracing::info!(
                         "HEARTBEAT GOING OUT, term {:?} 💖💖💖💖💖",
                         &server_state_inner.current_term
                     );
                     // issue AppendEntries heartbeats to peers
-                    let heartbeat_replies = Self::heartbeat_request(peer_clients.clone(), &server_state_inner, self.id)
-                        .await;
+                    let heartbeat_replies =
+                        Self::heartbeat_request(peer_clients.clone(), &server_state_inner, self.id)
+                            .await;
 
                     // is anyone ahead of us?
                     for reply in heartbeat_replies {
