@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
-//    console_subscriber::init();
+    //    console_subscriber::init();
 
     let cli = Cli::parse();
 

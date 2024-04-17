@@ -52,7 +52,9 @@ impl Heartbeat {
             }
         }
 
-        let mut heartbeat_interval = tokio::time::interval(Duration::from_millis(self.config.heartbeat_interval_ms.into()));
+        let mut heartbeat_interval = tokio::time::interval(Duration::from_millis(
+            self.config.heartbeat_interval_ms.into(),
+        ));
         heartbeat_interval.tick().await;
 
         loop {

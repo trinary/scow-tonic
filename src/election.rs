@@ -73,10 +73,11 @@ impl ElectionHandler {
                 );
                 if (server_state_inner.role == Role::Follower
                     || server_state_inner.role == Role::Candidate)
-                    && elapsed > interval.period() // TODO: I think this is wrong, we need to check more often for a heartbeat
-                    // The way it should work:
-                    // instead of polling on this long interval:
-                    // set a timeout that gets canceled and reset each time we get a heartbeat
+                    && elapsed > interval.period()
+                // TODO: I think this is wrong, we need to check more often for a heartbeat
+                // The way it should work:
+                // instead of polling on this long interval:
+                // set a timeout that gets canceled and reset each time we get a heartbeat
                 {
                     // increment term!
                     server_state_inner.current_term += 1;
@@ -87,6 +88,7 @@ impl ElectionHandler {
                         .initiate_vote(&server_state_inner, peer_clients.clone())
                         .await;
                     tracing::info!("vote results:{:?}", vote_res);
+
 
                     // how many votes do we need?!?
                     let vote_threshold = (peer_clients.len() / 2) + 1;
@@ -114,6 +116,26 @@ impl ElectionHandler {
             };
         }
     }
+
+// try this one at a time?!
+    async fn single_vote(
+        &self,
+        server_state: &ServerState,
+        mut client: ScowKeyValueClient<Channel>
+    ) -> Option<RequestVoteReply> {
+        let res = client.request_vote(RequestVoteRequest {
+            term: server_state.current_term,
+            candidate_id: self.id,
+            last_log_index: 2,
+            last_log_term: 3
+        }).await;
+
+        match res {
+            Ok(r) => Some(r.into_inner()),
+            Err(_) => None 
+        }
+    }
+
 
     async fn initiate_vote(
         &self,
@@ -160,18 +182,16 @@ impl ElectionHandler {
                 Err(e) => panic!("panic from build_client: {:?}", e),
             }
         }
-        
+
         let interval_range =
             self.config.election_timeout_min_ms as u64..self.config.election_timeout_max_ms as u64;
 
         let mut interval =
             tokio::time::interval(Duration::from_millis(rng.gen_range(interval_range.clone())));
 
-
         let mut this_timeout = timeout(interval.period(), async move {
-            // our 
+            // our
         });
-
     }
 
     // async fn initiate_vote_scoped_thread(
@@ -206,21 +226,28 @@ impl ElectionHandler {
     //     server_state: &ServerState,
     //     peer_clients: Vec<ScowKeyValueClient<Channel>>,
     // ) -> Vec<RequestVoteReply> {
-
-    //     let tasks = peer_clients.iter().map(|c| tokio::spawn(async move {
-    //         let res = c.request_vote(RequestVoteRequest {
-    //             term: server_state.current_term,
-    //             candidate_id: self.id,
-    //             last_log_index: 2,
-    //             last_log_term: 3,
-    //         }).await;
-    //         match res {
-    //             Ok(r) => r.into_inner(),
-    //             Err(e) => todo!(),
-    //         }
-    //     })).collect::<FuturesUnordered<_>>();
+    //     let tasks = peer_clients
+    //         .iter()
+    //         .map(|c| {
+    //             tokio::spawn(async move {
+    //                 let res = c
+    //                     .request_vote(RequestVoteRequest {
+    //                         term: server_state.current_term,
+    //                         candidate_id: self.id,
+    //                         last_log_index: 2,
+    //                         last_log_term: 3,
+    //                     })
+    //                     .await;
+    //                 match res {
+    //                     Ok(r) => r.into_inner(),
+    //                     Err(_) => todo!(),
+    //                 }
+    //             })
+    //         })
+    //         .collect::<FuturesUnordered<_>>();
 
     //     let results = futures::future::join_all(tasks).await;
-    //     results.iter().filter(|res| res.is_ok()).filter_map(|r| <Result<scow::RequestVoteReply, JoinError> as Clone>::clone(&r).ok()).collect()
+    //     results.into_iter().filter_map(|r| Some(r.unwrap())).collect()
+
     // }
 }
