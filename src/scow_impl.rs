@@ -1,18 +1,18 @@
 use std::collections::HashMap;
 
 use std::error::Error;
-use std::hash::Hash;
-use std::sync::Arc;
 
-use tokio::sync::Mutex;
+use tokio::sync::mpsc::Sender;
+use tokio::sync::oneshot;
 use tokio::time::Instant;
 use tonic::{Request, Response, Status};
 
 use crate::db::Db;
 use crate::scow_key_value_server::ScowKeyValue;
-use crate::{scow::*, Peer};
+use crate::state_handler::{StateCommand, StateCommandResult};
+use crate::scow::*;
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum Role {
     #[default]
     Follower,
@@ -20,6 +20,7 @@ pub enum Role {
     Candidate,
 }
 
+#[derive(Clone, Debug)]
 pub struct ServerState {
     pub role: Role,
     pub current_term: u64,
@@ -42,6 +43,7 @@ impl ServerState {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct LeaderState {
     /// for each server, index of the next log entry to send to that server (initialized to leaderlast log index + 1)
     next_index: HashMap<u64, u64>,
@@ -63,8 +65,7 @@ impl LeaderState {
 
 pub struct MyScowKeyValue {
     db: Db,
-    peers: Vec<Peer>,
-    server_state: Arc<Mutex<ServerState>>,
+    server_state_tx: Sender<(StateCommand, oneshot::Sender<StateCommandResult>)>,
 }
 
 #[tonic::async_trait]
@@ -104,32 +105,31 @@ impl ScowKeyValue for MyScowKeyValue {
         }
 
         tracing::info!("asking for server_state in append_entries");
-        let mut state_result = self.server_state.lock().await;
+        let (response_tx, response_rx) = oneshot::channel();
+        self.server_state_tx.send((StateCommand::GetServerState, response_tx)).await.ok().unwrap(); // TODO: bomb
+        let state_result = response_rx.await.unwrap();
+        let mut state = match state_result {
+            StateCommandResult::StateResponse(state) => state,
+            StateCommandResult::StateSuccess => panic!("got a write success from a read op to state handler") 
+        };
 
-        // match state_result {
-        //     Ok(mut s) => {
-        //         s.last_heartbeat = Instant::now();
-        //     },
-        //     Err(_) => todo!(),
-        // }
-
-        state_result.last_heartbeat = Instant::now();
+        state.last_heartbeat = Instant::now();
         // we got a heartbeat from someone, so someone is a leader and we should become a follower.
         // and set current term to theirs.
         // that is, if their term is greater than ours
 
-        if inner.leader_term >= state_result.current_term {
+        if inner.leader_term >= state.current_term {
             // shouldnt be possible to have an equal term, but just in case?
-            state_result.role = Role::Follower; // does this fuck up if we're a candidate when this happens?
-            state_result.current_term = inner.leader_term;
+            state.role = Role::Follower; // does this fuck up if we're a candidate when this happens?
+            state.current_term = inner.leader_term;
             Ok(Response::new(AppendEntriesReply {
-                term: state_result.current_term,
+                term: state.current_term,
                 success: true,
             }))
         } else {
             // the leader is further behind in terms than we are!
             Ok(Response::new(AppendEntriesReply {
-                term: state_result.current_term,
+                term: state.current_term,
                 success: false,
             }))
         }
@@ -158,11 +158,10 @@ impl ScowKeyValue for MyScowKeyValue {
 }
 
 impl MyScowKeyValue {
-    pub fn new(server_state: Arc<Mutex<ServerState>>) -> Self {
+    pub fn new(server_state_tx: Sender<(StateCommand, oneshot::Sender<StateCommandResult>)>) -> Self {
         MyScowKeyValue {
             db: Db::new(),
-            peers: vec![],
-            server_state: server_state,
+            server_state_tx: server_state_tx,
         }
     }
 
@@ -174,21 +173,29 @@ impl MyScowKeyValue {
     ) -> Result<(u64, bool), Box<dyn Error>> {
         tracing::info!("about to ask for state mutex in server_request_vote");
 
-        let mut server_state = self.server_state.lock().await; // only one try_lock? idk
-                                                               // if try_lock fails here, that means we're already requesting votes from other servers.
-                                                               // Maybe the thing to do here is successfully NOT grant a vote if we know we're requesting? Does that make any sense?
-        if candidate_term <= server_state.current_term {
-            server_state.voted_for = None;
-            Ok((server_state.current_term, false))
+        tracing::info!("asking for server_state in append_entries");
+        let (response_tx, response_rx) = oneshot::channel();
+        self.server_state_tx.send((StateCommand::GetServerState, response_tx)).await.ok().unwrap(); // TODO: bomb
+        let state_result = response_rx.await.unwrap();
+        let mut state = match state_result {
+            StateCommandResult::StateResponse(state) => state,
+            StateCommandResult::StateSuccess => panic!("got a write success from a read op to state handler") 
+        };
+
+        tracing::info!("IMPL got a ServerState from the handler: {:?}", state);
+
+        if candidate_term <= state.current_term {
+            state.voted_for = None;
+            Ok((state.current_term, false))
         } else {
-            if (server_state.voted_for.is_none() || server_state.voted_for == Some(candidate_id))
-                && candidate_last_index >= server_state.last_log_index
+            if (state.voted_for.is_none() || state.voted_for == Some(candidate_id))
+                && candidate_last_index >= state.last_log_index
             {
-                server_state.voted_for = Some(candidate_id);
-                Ok((server_state.current_term, true))
+                state.voted_for = Some(candidate_id);
+                Ok((state.current_term, true))
             } else {
-                server_state.voted_for = None;
-                Ok((server_state.current_term, false))
+                state.voted_for = None;
+                Ok((state.current_term, false))
             }
         }
     }

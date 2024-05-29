@@ -4,17 +4,19 @@ use scow::*;
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::join;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 use tonic::transport::Server;
 
 use crate::election::ElectionHandler;
 use crate::heartbeat::Heartbeat;
 use crate::scow_impl::{MyScowKeyValue, ServerState};
+use crate::state_handler::StateHandler;
 
 mod db;
 mod election;
 mod heartbeat;
 mod scow_impl;
+mod state_handler;
 
 pub mod scow {
     tonic::include_proto!("scow");
@@ -69,22 +71,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::info!("MY config: {:?}", my_config);
 
-    let server_state = Arc::new(Mutex::new(ServerState::new()));
+    let (state_tx, mut state_rx) = mpsc::channel(32);
+
+    let mut state_handler = StateHandler::new(state_rx);
+
+    tokio::spawn(async move {
+        let _ = state_handler.run().await;
+    });
 
     let addr = my_config.address.parse().unwrap();
-    let scow_key_value = MyScowKeyValue::new(server_state.clone());
+    let scow_key_value = MyScowKeyValue::new(state_tx.clone());
 
-    let election_handler = ElectionHandler::new(server_state.clone(), config_arc.clone(), cli.id);
-    let election_future = election_handler.run_election_loop();
+//    let election_handler = ElectionHandler::new(state_tx.clone(), cli.id);
+//    let election_future = election_handler.run_election_loop();
 
-    let heartbeat_handler = Heartbeat::new(server_state.clone(), config_arc.clone(), cli.id);
-    let heartbeat_future = heartbeat_handler.run_heartbeat_loop();
+//    let heartbeat_handler = Heartbeat::new(server_state.clone(), config_arc.clone(), cli.id);
+//    let heartbeat_future = heartbeat_handler.run_heartbeat_loop();
 
     let server = Server::builder()
         .add_service(ScowKeyValueServer::new(scow_key_value))
         .serve(addr);
 
-    let _join_res = join!(server, election_future, heartbeat_future);
+    let _join_res = join!(server);//, election_future, heartbeat_future);
 
     Ok(())
 }
