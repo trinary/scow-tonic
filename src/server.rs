@@ -73,7 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (state_tx, mut state_rx) = mpsc::channel(32);
 
-    let mut state_handler = StateHandler::new(state_rx);
+    let mut state_handler = StateHandler::new(state_rx, &config_arc.servers, cli.id);
 
     tokio::spawn(async move {
         let _ = state_handler.run().await;
@@ -85,14 +85,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //    let election_handler = ElectionHandler::new(state_tx.clone(), cli.id);
 //    let election_future = election_handler.run_election_loop();
 
-//    let heartbeat_handler = Heartbeat::new(server_state.clone(), config_arc.clone(), cli.id);
-//    let heartbeat_future = heartbeat_handler.run_heartbeat_loop();
+    let heartbeat_handler = Heartbeat::new(state_tx.clone(), config_arc.clone());
+    let heartbeat_future = heartbeat_handler.run_heartbeat_loop();
 
     let server = Server::builder()
         .add_service(ScowKeyValueServer::new(scow_key_value))
         .serve(addr);
 
-    let _join_res = join!(server);//, election_future, heartbeat_future);
+    let _join_res = join!(server, heartbeat_future);//, election_future, heartbeat_future);
 
     Ok(())
 }

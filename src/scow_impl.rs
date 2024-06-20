@@ -110,7 +110,7 @@ impl ScowKeyValue for MyScowKeyValue {
         let state_result = response_rx.await.unwrap();
         let mut state = match state_result {
             StateCommandResult::StateResponse(state) => state,
-            StateCommandResult::StateSuccess => panic!("got a write success from a read op to state handler") 
+            _s => panic!("got the wrong result from a read op to state handler") 
         };
 
         state.last_heartbeat = Instant::now();
@@ -179,24 +179,28 @@ impl MyScowKeyValue {
         let state_result = response_rx.await.unwrap();
         let mut state = match state_result {
             StateCommandResult::StateResponse(state) => state,
-            StateCommandResult::StateSuccess => panic!("got a write success from a read op to state handler") 
+            _ => panic!("got the wrong result from a read op to state handler") 
         };
+
+        let mut vote = false;
 
         tracing::info!("IMPL got a ServerState from the handler: {:?}", state);
 
         if candidate_term <= state.current_term {
             state.voted_for = None;
-            Ok((state.current_term, false))
         } else {
             if (state.voted_for.is_none() || state.voted_for == Some(candidate_id))
                 && candidate_last_index >= state.last_log_index
             {
                 state.voted_for = Some(candidate_id);
-                Ok((state.current_term, true))
+                vote = true;
             } else {
                 state.voted_for = None;
-                Ok((state.current_term, false))
             }
         }
+        let (write_response_tx, write_response_rx) = oneshot::channel();
+        let write_result = self.server_state_tx.send((StateCommand::SetServerState(state.clone()), write_response_tx)).await?;
+        tracing::info!("got a result from our state write in request");
+        Ok((state.current_term, vote))
     }
 }
