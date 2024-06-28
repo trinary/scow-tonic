@@ -66,7 +66,6 @@ impl Heartbeat {
                         _ => panic!("got the wrong result from a heartbeat op in heartbeat loop"),
                     };
 
-                    return;
                     // issue AppendEntries heartbeats to peers
                     // let heartbeat_replies =
                     //     Self::heartbeat_request(peer_clients.clone(), &server_state_inner, self.id)

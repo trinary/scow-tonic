@@ -22,6 +22,7 @@ pub enum Role {
 
 #[derive(Clone, Debug)]
 pub struct ServerState {
+    pub id: u64,
     pub role: Role,
     pub current_term: u64,
     pub voted_for: Option<u64>,
@@ -31,8 +32,9 @@ pub struct ServerState {
 }
 
 impl ServerState {
-    pub fn new() -> Self {
+    pub fn new(id: u64) -> Self {
         Self {
+            id: id,
             role: Role::Follower,
             current_term: 0,
             voted_for: None,

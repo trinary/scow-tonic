@@ -14,17 +14,6 @@ impl Default for ServerState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Copy)]
-pub struct ServerId {
-    pub id: u32,
-    pub address: SocketAddr,
-}
-
-impl Display for ServerId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({} {})", self.id, self.address)
-    }
-}
 
 #[derive(Debug)]
 pub struct TermState {
