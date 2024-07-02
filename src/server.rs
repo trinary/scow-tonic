@@ -82,8 +82,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = my_config.address.parse().unwrap();
     let scow_key_value = MyScowKeyValue::new(state_tx.clone());
 
-//    let election_handler = ElectionHandler::new(state_tx.clone(), cli.id);
-//    let election_future = election_handler.run_election_loop();
+    let election_handler = ElectionHandler::new(state_tx.clone(), config_arc.clone());
+    let election_future = election_handler.run_election_loop();
 
     let heartbeat_handler = Heartbeat::new(state_tx.clone(), config_arc.clone());
     let heartbeat_future = heartbeat_handler.run_heartbeat_loop();
@@ -92,7 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(ScowKeyValueServer::new(scow_key_value))
         .serve(addr);
 
-    let _join_res = join!(server, heartbeat_future);//, election_future, heartbeat_future);
+    let _join_res = join!(server, heartbeat_future, election_future);
 
     Ok(())
 }

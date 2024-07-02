@@ -1,6 +1,6 @@
 use std::{error::Error, sync::Arc, time::Duration};
 
-use tokio::{sync::{mpsc::Sender, oneshot, Mutex}, time::Instant};
+use tokio::{sync::{mpsc::Sender, oneshot}, time::Instant};
 use tonic::transport::Channel;
 
 use crate::{
@@ -11,14 +11,14 @@ use crate::{
 mod client_tools;
 
 pub struct Heartbeat {
-    server_state_tx: Sender<(StateCommand, oneshot::Sender<StateCommandResult>)>,
+    command_handler_tx: Sender<(StateCommand, oneshot::Sender<StateCommandResult>)>,
     config: Arc<Config>,
 }
 
 impl Heartbeat {
-    pub fn new(server_state_tx: Sender<(StateCommand, oneshot::Sender<StateCommandResult>)>, config: Arc<Config>) -> Self {
+    pub fn new(command_handler_tx: Sender<(StateCommand, oneshot::Sender<StateCommandResult>)>, config: Arc<Config>) -> Self {
         Self {
-            server_state_tx: server_state_tx,
+            command_handler_tx: command_handler_tx,
             config: config,
         }
     }
@@ -40,7 +40,7 @@ impl Heartbeat {
             {
                 tracing::info!("asking for server_state in heartbeat_loop inner");
                 let (response_tx, response_rx) = oneshot::channel();
-                self.server_state_tx.send((StateCommand::GetServerState, response_tx)).await.ok().unwrap(); //todo 💣
+                self.command_handler_tx.send((StateCommand::GetServerState, response_tx)).await.ok().unwrap(); //todo 💣
                 let state_result = response_rx.await.unwrap();
 
                 let mut server_state_inner = match state_result {
@@ -48,7 +48,7 @@ impl Heartbeat {
                     _ => panic!("got the wrong result from a state read op in heartbeat loop"),
                 };
 
-                if true {// server_state_inner.role == Role::Leader {
+                if server_state_inner.role == Role::Leader {
                     // we are the leader
                     server_state_inner.last_heartbeat = Instant::now(); // assume we are up to date so we don't trigger an election on ourselves....idk about this.
                     tracing::info!(
@@ -56,8 +56,7 @@ impl Heartbeat {
                         &server_state_inner.current_term
                     );
 
-                    let (heartbeat_response_tx, heartbeat_response_rx) = oneshot::channel();
-                    self.server_state_tx.send((StateCommand::Heartbeat, heartbeat_response_tx)).await.ok().unwrap();
+                    let (heartbeat_response_tx, heartbeat_response_rx) = oneshot::channel();                    self.command_handler_tx.send((StateCommand::Heartbeat, heartbeat_response_tx)).await.ok().unwrap();
                     let heartbeat_response = heartbeat_response_rx.await.unwrap();
                     let heartbeat_replies = match heartbeat_response {
                         StateCommandResult::HeartbeatResponse(results) => {

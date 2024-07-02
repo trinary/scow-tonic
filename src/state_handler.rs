@@ -1,6 +1,6 @@
 use std::{fmt::Debug, sync::Arc};
 
-use tokio::{sync::{mpsc::Receiver, oneshot, Mutex}, task::{JoinError, JoinSet}};
+use tokio::{sync::{mpsc::{Receiver, Sender}, oneshot, Mutex}, task::{JoinError, JoinSet}};
 use tonic::{transport::Channel, Status};
 
 use crate::{heartbeat::Heartbeat, scow, scow_impl::ServerState, scow_key_value_client::ScowKeyValueClient, AppendEntriesReply, AppendEntriesRequest, Peer, RequestVoteRequest};
@@ -8,7 +8,6 @@ use crate::{heartbeat::Heartbeat, scow, scow_impl::ServerState, scow_key_value_c
 
 #[path = "./client_tools.rs"]
 mod client_tools;
-
 
 #[derive(Debug)]
 pub enum StateCommand {
@@ -69,7 +68,6 @@ impl StateHandler {
     }
 
     async fn heartbeat(&mut self, server_state: ServerState) -> Vec<Result<tonic::Response<scow::AppendEntriesReply>, Status>> {
-        // self.clients
         // TODO: figure out how to make many parallel requests to these clients without blocking.
         // we already had this problem in heartbeat.rs, we may need our own sub-channel to parallelize
         // LETS TRY
