@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use std::{error::Error, sync::Arc, time::Duration};
 
 use rand::{thread_rng, Rng};
@@ -127,20 +128,20 @@ impl ElectionHandler {
                                     // the requester "votes for itself", can we just say we automatically have 1 vote?
                                     // Or do we need to request_vote from ourselves? We don't have a client to ourselves right now.
 
-                                    let granted_votes = 1;
                                     server_state_inner.voted_for = Some(server_state_inner.id);
 
-                                    let replies = vote_res
-                                        .iter()
-                                        .map(|v| v.as_ref().and_then(|z| Ok(z.into_inner())))
-                                        .collect::<Vec<_>>();
-                                    vote_res.iter().fold(1, |acc, x| {
-                                        if x.into_inner().vote_granted {
-                                            acc + 1
+                                    let granted_votes = vote_res.into_iter().fold(1, |acc, x| {
+                                        if let Ok(vote) = x {
+                                            let vote = vote.into_inner();
+                                            if vote.vote_granted {
+                                                acc + 1
+                                            } else {
+                                                acc
+                                            }
                                         } else {
-                                            acc
+                                            acc // todo this logic flow is horrendous
                                         }
-                                    }); // TODO yikes
+                                    });
                                     if granted_votes >= vote_threshold {
                                         // we win!
                                         tracing::info!("WE WIN ✌️✌️✌️✌️✌️✌️");
