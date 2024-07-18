@@ -1,10 +1,16 @@
 use std::{error::Error, sync::Arc, time::Duration};
 
-use tokio::{sync::{mpsc::Sender, oneshot}, time::Instant};
+use tokio::{
+    sync::{mpsc::Sender, oneshot},
+    time::Instant,
+};
 use tonic::transport::Channel;
 
 use crate::{
-    scow_impl::{Role, ServerState}, scow_key_value_client::ScowKeyValueClient, state_handler::{StateCommand, StateCommandResult}, AppendEntriesReply, AppendEntriesRequest, Config, Peer
+    scow_impl::{Role, ServerState},
+    scow_key_value_client::ScowKeyValueClient,
+    state_handler::{StateCommand, StateCommandResult},
+    AppendEntriesReply, AppendEntriesRequest, Config, Peer,
 };
 
 #[path = "./client_tools.rs"]
@@ -16,7 +22,10 @@ pub struct Heartbeat {
 }
 
 impl Heartbeat {
-    pub fn new(command_handler_tx: Sender<(StateCommand, oneshot::Sender<StateCommandResult>)>, config: Arc<Config>) -> Self {
+    pub fn new(
+        command_handler_tx: Sender<(StateCommand, oneshot::Sender<StateCommandResult>)>,
+        config: Arc<Config>,
+    ) -> Self {
         Self {
             command_handler_tx: command_handler_tx,
             config: config,
@@ -29,7 +38,6 @@ impl Heartbeat {
     }
 
     async fn heartbeat_loop(&self) -> () {
-
         let mut heartbeat_interval = tokio::time::interval(Duration::from_millis(
             self.config.heartbeat_interval_ms.into(),
         ));
@@ -40,7 +48,11 @@ impl Heartbeat {
             {
                 tracing::info!("asking for server_state in heartbeat_loop inner");
                 let (response_tx, response_rx) = oneshot::channel();
-                self.command_handler_tx.send((StateCommand::GetServerState, response_tx)).await.ok().unwrap(); //todo 💣
+                self.command_handler_tx
+                    .send((StateCommand::GetServerState, response_tx))
+                    .await
+                    .ok()
+                    .unwrap(); //todo 💣
                 let state_result = response_rx.await.unwrap();
 
                 let mut server_state_inner = match state_result {
@@ -56,12 +68,17 @@ impl Heartbeat {
                         &server_state_inner.current_term
                     );
 
-                    let (heartbeat_response_tx, heartbeat_response_rx) = oneshot::channel();                    self.command_handler_tx.send((StateCommand::Heartbeat, heartbeat_response_tx)).await.ok().unwrap();
+                    let (heartbeat_response_tx, heartbeat_response_rx) = oneshot::channel();
+                    self.command_handler_tx
+                        .send((StateCommand::Heartbeat, heartbeat_response_tx))
+                        .await
+                        .ok()
+                        .unwrap();
                     let heartbeat_response = heartbeat_response_rx.await.unwrap();
                     let heartbeat_replies = match heartbeat_response {
                         StateCommandResult::HeartbeatResponse(results) => {
                             tracing::info!("got a heartbeat response {:?}", results);
-                        },
+                        }
                         _ => panic!("got the wrong result from a heartbeat op in heartbeat loop"),
                     };
 

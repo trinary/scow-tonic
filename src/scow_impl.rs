@@ -8,11 +8,11 @@ use tokio::time::Instant;
 use tonic::{Request, Response, Status};
 
 use crate::db::Db;
+use crate::scow::*;
 use crate::scow_key_value_server::ScowKeyValue;
 use crate::state_handler::{StateCommand, StateCommandResult};
-use crate::scow::*;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Role {
     #[default]
     Follower,
@@ -20,7 +20,7 @@ pub enum Role {
     Candidate,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct ServerState {
     pub id: u64,
     pub role: Role,
@@ -45,22 +45,20 @@ impl ServerState {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct LeaderState {
     /// for each server, index of the next log entry to send to that server (initialized to leaderlast log index + 1)
-    next_index: HashMap<u64, u64>,
+    next_index: u64,
     /// for each server, index of highest log entry known to be replicated on server (initialized to 0, increases monotonically)
-    match_index: HashMap<u64, u64>,
+    match_index: u64,
 }
 impl LeaderState {
     pub(crate) fn new(leader_last_log: u64) -> LeaderState {
         let mut this = Self {
-            next_index: HashMap::new(),
-            match_index: HashMap::new(),
+            next_index: 0,
+            match_index: 0,
         };
 
-        this.next_index.insert(1, leader_last_log);
-        this.match_index.insert(1, 0);
         this
     }
 }
@@ -108,11 +106,15 @@ impl ScowKeyValue for MyScowKeyValue {
 
         tracing::info!("asking for server_state in append_entries");
         let (response_tx, response_rx) = oneshot::channel();
-        self.server_state_tx.send((StateCommand::GetServerState, response_tx)).await.ok().unwrap(); // TODO: bomb
+        self.server_state_tx
+            .send((StateCommand::GetServerState, response_tx))
+            .await
+            .ok()
+            .unwrap(); // TODO: bomb
         let state_result = response_rx.await.unwrap();
         let mut state = match state_result {
             StateCommandResult::StateResponse(state) => state,
-            _s => panic!("got the wrong result from a read op to state handler") 
+            _s => panic!("got the wrong result from a read op to state handler"),
         };
 
         state.last_heartbeat = Instant::now();
@@ -160,7 +162,9 @@ impl ScowKeyValue for MyScowKeyValue {
 }
 
 impl MyScowKeyValue {
-    pub fn new(server_state_tx: Sender<(StateCommand, oneshot::Sender<StateCommandResult>)>) -> Self {
+    pub fn new(
+        server_state_tx: Sender<(StateCommand, oneshot::Sender<StateCommandResult>)>,
+    ) -> Self {
         MyScowKeyValue {
             db: Db::new(),
             server_state_tx: server_state_tx,
@@ -177,11 +181,15 @@ impl MyScowKeyValue {
 
         tracing::info!("asking for server_state in append_entries");
         let (response_tx, response_rx) = oneshot::channel();
-        self.server_state_tx.send((StateCommand::GetServerState, response_tx)).await.ok().unwrap(); // TODO: bomb
+        self.server_state_tx
+            .send((StateCommand::GetServerState, response_tx))
+            .await
+            .ok()
+            .unwrap(); // TODO: bomb
         let state_result = response_rx.await.unwrap();
         let mut state = match state_result {
             StateCommandResult::StateResponse(state) => state,
-            _ => panic!("got the wrong result from a read op to state handler") 
+            _ => panic!("got the wrong result from a read op to state handler"),
         };
 
         let mut vote = false;
@@ -201,7 +209,13 @@ impl MyScowKeyValue {
             }
         }
         let (write_response_tx, write_response_rx) = oneshot::channel();
-        let write_result = self.server_state_tx.send((StateCommand::SetServerState(state.clone()), write_response_tx)).await?;
+        let write_result = self
+            .server_state_tx
+            .send((
+                StateCommand::SetServerState(state.clone()),
+                write_response_tx,
+            ))
+            .await?;
         tracing::info!("got a result from our state write in request");
         Ok((state.current_term, vote))
     }

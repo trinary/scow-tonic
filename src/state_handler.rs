@@ -1,10 +1,18 @@
 use std::{fmt::Debug, sync::Arc};
 
-use tokio::{sync::{mpsc::{Receiver, Sender}, oneshot, Mutex}, task::{JoinError, JoinSet}};
+use tokio::{
+    sync::{
+        mpsc::{Receiver, Sender},
+        oneshot, Mutex,
+    },
+    task::{JoinError, JoinSet},
+};
 use tonic::{transport::Channel, Status};
 
-use crate::{heartbeat::Heartbeat, scow, scow_impl::ServerState, scow_key_value_client::ScowKeyValueClient, AppendEntriesReply, AppendEntriesRequest, Peer, RequestVoteRequest};
-
+use crate::{
+    heartbeat::Heartbeat, scow, scow_impl::ServerState, scow_key_value_client::ScowKeyValueClient,
+    AppendEntriesReply, AppendEntriesRequest, Peer, RequestVoteRequest,
+};
 
 #[path = "./client_tools.rs"]
 mod client_tools;
@@ -33,16 +41,20 @@ pub enum StateCommandResult {
 pub struct StateHandler {
     rx: Receiver<(StateCommand, oneshot::Sender<StateCommandResult>)>,
     server_state: Arc<Mutex<ServerState>>,
-    clients: Vec<ScowKeyValueClient<Channel>>
+    clients: Vec<ScowKeyValueClient<Channel>>,
 }
 
 impl StateHandler {
-    pub fn new(rx: Receiver<(StateCommand, oneshot::Sender<StateCommandResult>)>, peers: &[Peer], my_id: u64) -> Self {
-        let clients: Vec<ScowKeyValueClient<Channel>> = peers.iter()
+    pub fn new(
+        rx: Receiver<(StateCommand, oneshot::Sender<StateCommandResult>)>,
+        peers: &[Peer],
+        my_id: u64,
+    ) -> Self {
+        let clients: Vec<ScowKeyValueClient<Channel>> = peers
+            .iter()
             .filter(|s| s.id != my_id)
             .flat_map(|p| client_tools::build_client(p))
             .collect();
-
 
         tracing::info!("built clients in StateHandler new: {:?}", clients);
         Self {
@@ -67,7 +79,10 @@ impl StateHandler {
         tracing::info!("StateHandler set the state. 📝");
     }
 
-    async fn heartbeat(&mut self, server_state: ServerState) -> Vec<Result<tonic::Response<scow::AppendEntriesReply>, Status>> {
+    async fn heartbeat(
+        &mut self,
+        server_state: ServerState,
+    ) -> Vec<Result<tonic::Response<scow::AppendEntriesReply>, Status>> {
         // TODO: figure out how to make many parallel requests to these clients without blocking.
         // we already had this problem in heartbeat.rs, we may need our own sub-channel to parallelize
         // LETS TRY
@@ -75,24 +90,30 @@ impl StateHandler {
         let mut joinset = JoinSet::new();
         let mut results = vec![];
 
-        for mut client in <Vec<ScowKeyValueClient<Channel>> as Clone>::clone(&self.clients).into_iter() {
+        for mut client in
+            <Vec<ScowKeyValueClient<Channel>> as Clone>::clone(&self.clients).into_iter()
+        {
             joinset.spawn(async move {
                 tracing::info!("sending append_entries HEARTBEAT to {:?}", client);
-                let append_result = client.append_entries(AppendEntriesRequest {
-                    leader_term: server_state.current_term,
-                    leader_id: 22222,
-                    prev_log_index: 33333,
-                    prev_log_term: 44444,
-                    leader_commit: 55555,
-                    entries: vec![],
-                }).await;
-                tracing::info!("append_entries HEARTBEAT COMPLETE"); 
+                let append_result = client
+                    .append_entries(AppendEntriesRequest {
+                        leader_term: server_state.current_term,
+                        leader_id: 22222,
+                        prev_log_index: 33333,
+                        prev_log_term: 44444,
+                        leader_commit: 55555,
+                        entries: vec![],
+                    })
+                    .await;
+                tracing::info!("append_entries HEARTBEAT COMPLETE");
                 append_result
             });
-        };
+        }
 
         while let Some(res) = joinset.join_next().await {
-            if res.is_ok() { results.push(res.unwrap()); }
+            if res.is_ok() {
+                results.push(res.unwrap());
+            }
         }
 
         tracing::info!("done collecting replies from heartbeat.");
@@ -100,55 +121,65 @@ impl StateHandler {
         results
     }
 
-    async fn handle_command(&mut self, cmd: StateCommand, response_channel: oneshot::Sender<StateCommandResult>) -> Result<(), String> {
+    async fn handle_command(
+        &mut self,
+        cmd: StateCommand,
+        response_channel: oneshot::Sender<StateCommandResult>,
+    ) -> Result<(), String> {
         match cmd {
             StateCommand::GetServerState => {
                 tracing::info!("StateHandler got a GetServerState command. 📖");
                 let state = self.server_state.lock().await.clone();
                 response_channel.send(StateCommandResult::StateResponse(state));
-            },
+            }
             StateCommand::SetServerState(s) => {
                 self.set_server_state(s).await;
                 response_channel.send(StateCommandResult::StateSuccess);
-            },
+            }
             StateCommand::Heartbeat => {
                 let state = self.server_state.lock().await.clone();
                 let results = self.heartbeat(state).await;
                 response_channel.send(StateCommandResult::HeartbeatResponse(results));
-            },
+            }
             StateCommand::RequestVote => {
                 let state = self.server_state.lock().await.clone();
                 let results = self.request_vote(state).await;
                 response_channel.send(StateCommandResult::RequestVoteResponse(results));
             }
-
         }
         Ok(())
     }
-    
-    async fn request_vote(&self, server_state: ServerState) -> Vec<Result<tonic::Response<scow::RequestVoteReply>, Status>> {
+
+    async fn request_vote(
+        &self,
+        server_state: ServerState,
+    ) -> Vec<Result<tonic::Response<scow::RequestVoteReply>, Status>> {
         let mut joinset = JoinSet::new();
         let mut results = vec![];
 
-        for mut client in <Vec<ScowKeyValueClient<Channel>> as Clone>::clone(&self.clients).into_iter() {
+        for mut client in
+            <Vec<ScowKeyValueClient<Channel>> as Clone>::clone(&self.clients).into_iter()
+        {
             joinset.spawn(async move {
                 tracing::info!("sending a VOTE REQUEST");
-                let vote_result = client.request_vote(RequestVoteRequest {
-                    term: server_state.current_term,
-                    candidate_id: server_state.id,
-                    last_log_index: 9999,
-                    last_log_term: 8888,
-                }).await;
+                let vote_result = client
+                    .request_vote(RequestVoteRequest {
+                        term: server_state.current_term,
+                        candidate_id: server_state.id,
+                        last_log_index: 9999,
+                        last_log_term: 8888,
+                    })
+                    .await;
                 tracing::info!("got a response from VOTE REQUEST: {:?}", vote_result);
                 vote_result
             });
         }
 
-        
         while let Some(res) = joinset.join_next().await {
-            if res.is_ok() { results.push(res.unwrap()); }
+            if res.is_ok() {
+                results.push(res.unwrap());
+            }
         }
         results
     }
-
 }
