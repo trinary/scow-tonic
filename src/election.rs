@@ -149,6 +149,24 @@ impl ElectionHandler {
                                         server_state_inner.leader_state = Some(LeaderState::new(
                                             server_state_inner.clone().last_log_index,
                                         ));
+                                        // commit the state change
+                                        let (state_update_tx, state_update_rx) = oneshot::channel();
+                                        self.command_handler_tx
+                                            .send((
+                                                StateCommand::SetServerState(server_state_inner),
+                                                state_update_tx,
+                                            ))
+                                            .await;
+
+                                        match state_update_rx.await {
+                                            Ok(update) => tracing::info!(
+                                                "got a result from updating state after winning election: {:?}",
+                                                update
+                                            ),
+                                            Err(e) => {
+                                                tracing::error!("got an ERR from updating state after winning election: {:?}", e)
+                                            }
+                                        }
                                     } else {
                                         // we don't win!
                                         tracing::info!("WE DO NOT WIN 😢😢😢😢😢😢");

@@ -98,7 +98,7 @@ impl StateHandler {
                 let append_result = client
                     .append_entries(AppendEntriesRequest {
                         leader_term: server_state.current_term,
-                        leader_id: 22222,
+                        leader_id: server_state.id,
                         prev_log_index: 33333,
                         prev_log_term: 44444,
                         leader_commit: 55555,
