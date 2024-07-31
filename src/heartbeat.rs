@@ -4,13 +4,11 @@ use tokio::{
     sync::{mpsc::Sender, oneshot},
     time::Instant,
 };
-use tonic::transport::Channel;
 
 use crate::{
-    scow_impl::{Role, ServerState},
-    scow_key_value_client::ScowKeyValueClient,
+    scow_impl::Role,
     state_handler::{StateCommand, StateCommandResult},
-    AppendEntriesReply, AppendEntriesRequest, Config, Peer,
+    Config,
 };
 
 #[path = "./client_tools.rs"]
@@ -81,52 +79,8 @@ impl Heartbeat {
                         }
                         _ => panic!("got the wrong result from a heartbeat op in heartbeat loop"),
                     };
-
-                    // issue AppendEntries heartbeats to peers
-                    // let heartbeat_replies =
-                    //     Self::heartbeat_request(peer_clients.clone(), &server_state_inner, self.id)
-                    //         .await;
-
-                    // is anyone ahead of us?
-                    // for reply in heartbeat_replies {
-                    //     if reply.term >= server_state_inner.current_term {
-                    //         server_state_inner.current_term = reply.term;
-                    //         server_state_inner.role = Role::Follower;
-                    //     }
-                    // }
                 }
             };
         }
-    }
-
-    async fn heartbeat_request(
-        peer_clients: Vec<ScowKeyValueClient<Channel>>,
-        server_state: &ServerState,
-        id: u64,
-    ) -> Vec<AppendEntriesReply> {
-        let mut replies = vec![];
-        for mut client in peer_clients {
-            let res = client
-                .append_entries(AppendEntriesRequest {
-                    leader_term: server_state.current_term,
-                    leader_id: id,
-                    prev_log_index: 2,
-                    prev_log_term: 3,
-                    leader_commit: 1,
-                    entries: vec![],
-                })
-                .await;
-
-            match res {
-                Ok(r) => {
-                    tracing::info!("got heartbeat result: {:?}", r);
-                    replies.push(r.into_inner())
-                }
-                Err(e) => {
-                    tracing::error!("err from heartbeat AppendEntries request: {:?}", e)
-                }
-            }
-        }
-        replies
     }
 }

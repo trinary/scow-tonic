@@ -65,7 +65,7 @@ impl LeaderState {
 
 pub struct MyScowKeyValue {
     db: Db,
-    server_state_tx: Sender<(StateCommand, oneshot::Sender<StateCommandResult>)>,
+    command_handler_tx: Sender<(StateCommand, oneshot::Sender<StateCommandResult>)>,
 }
 
 #[tonic::async_trait]
@@ -106,7 +106,7 @@ impl ScowKeyValue for MyScowKeyValue {
 
         tracing::info!("asking for server_state in append_entries");
         let (response_tx, response_rx) = oneshot::channel();
-        self.server_state_tx
+        self.command_handler_tx
             .send((StateCommand::GetServerState, response_tx))
             .await
             .ok()
@@ -122,21 +122,44 @@ impl ScowKeyValue for MyScowKeyValue {
         // and set current term to theirs.
         // that is, if their term is greater than ours
 
+
+        let mut response;
+
         if inner.leader_term >= state.current_term {
             // shouldnt be possible to have an equal term, but just in case?
             state.role = Role::Follower; // does this fuck up if we're a candidate when this happens?
             state.current_term = inner.leader_term;
-            Ok(Response::new(AppendEntriesReply {
+            response = Ok(Response::new(AppendEntriesReply {
                 term: state.current_term,
                 success: true,
             }))
         } else {
             // the leader is further behind in terms than we are!
-            Ok(Response::new(AppendEntriesReply {
+            response = Ok(Response::new(AppendEntriesReply {
                 term: state.current_term,
                 success: false,
             }))
-        }
+        };
+
+        // TODO we need to commit the state update here
+        let (state_update_tx, state_update_rx) = oneshot::channel();
+        self.command_handler_tx
+        .send((
+            StateCommand::SetServerState(state),
+            state_update_tx,
+        )).await;
+
+        match state_update_rx.await {
+            Ok(update) => tracing::info!(
+                "got a result from updating state after handling append_entries: {:?}",
+                update
+            ),
+            Err(e) => {
+                tracing::error!("got an ERR from updating state after handling append_entries: {:?}", e)
+            }
+        };
+        response
+
     }
 
     async fn request_vote(
@@ -167,7 +190,7 @@ impl MyScowKeyValue {
     ) -> Self {
         MyScowKeyValue {
             db: Db::new(),
-            server_state_tx: server_state_tx,
+            command_handler_tx: server_state_tx,
         }
     }
 
@@ -181,7 +204,7 @@ impl MyScowKeyValue {
 
         tracing::info!("asking for server_state in append_entries");
         let (response_tx, response_rx) = oneshot::channel();
-        self.server_state_tx
+        self.command_handler_tx
             .send((StateCommand::GetServerState, response_tx))
             .await
             .ok()
@@ -210,7 +233,7 @@ impl MyScowKeyValue {
         }
         let (write_response_tx, write_response_rx) = oneshot::channel();
         let write_result = self
-            .server_state_tx
+            .command_handler_tx
             .send((
                 StateCommand::SetServerState(state.clone()),
                 write_response_tx,
