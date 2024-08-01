@@ -51,13 +51,11 @@ pub struct LeaderState {
     match_index: u64,
 }
 impl LeaderState {
-    pub(crate) fn new(leader_last_log: u64) -> LeaderState {
-        let mut this = Self {
+    pub(crate) fn new() -> LeaderState {
+        Self {
             next_index: 0,
             match_index: 0,
-        };
-
-        this
+        }
     }
 }
 
@@ -120,7 +118,7 @@ impl ScowKeyValue for MyScowKeyValue {
         // and set current term to theirs.
         // that is, if their term is greater than ours
 
-        let mut response;
+        let response;
 
         if inner.leader_term >= state.current_term {
             // shouldnt be possible to have an equal term, but just in case?
@@ -236,7 +234,20 @@ impl MyScowKeyValue {
                 write_response_tx,
             ))
             .await?;
-        tracing::info!("got a result from our state write in request");
+
+        let vote_response = write_response_rx.await;
+        match vote_response {
+            Ok(r) => {
+                tracing::info!(
+                    "got a result from our state write handling vote request {:?}",
+                    r
+                );
+            }
+            Err(e) => {
+                tracing::error!("ERROR: from our state write handling vote request {:?}", e);
+            }
+        }
+
         Ok((state.current_term, vote))
     }
 }

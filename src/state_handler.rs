@@ -127,24 +127,59 @@ impl StateHandler {
             StateCommand::GetServerState => {
                 tracing::info!("StateHandler got a GetServerState command. 📖");
                 let state = self.server_state.lock().await.clone();
-                response_channel.send(StateCommandResult::StateResponse(state));
+                match response_channel.send(StateCommandResult::StateResponse(state)) {
+                    Ok(_) => Ok(()),
+                    Err(e) => {
+                        tracing::error!(
+                            "ERROR sending response from GetServerState command: {:?}",
+                            e
+                        );
+                        Err(String::from("GetServerState"))
+                    }
+                }
             }
             StateCommand::SetServerState(s) => {
                 self.set_server_state(s).await;
-                response_channel.send(StateCommandResult::StateSuccess);
+                match response_channel.send(StateCommandResult::StateSuccess) {
+                    Ok(_) => Ok(()),
+                    Err(e) => {
+                        tracing::error!(
+                            "ERROR sending response from SetServerState command: {:?}",
+                            e
+                        );
+                        Err(String::from("SetServerState"))
+                    }
+                }
             }
             StateCommand::Heartbeat => {
                 let state = self.server_state.lock().await.clone();
                 let results = self.heartbeat(state).await;
-                response_channel.send(StateCommandResult::HeartbeatResponse(results));
+                match response_channel.send(StateCommandResult::HeartbeatResponse(results)) {
+                    Ok(_) => Ok(()),
+                    Err(e) => {
+                        tracing::error!(
+                            "ERROR sending response from Heartbeat command: {:?}",
+                            e
+                        );
+                        Err(String::from("Heartbeat"))
+                    }
+                }
             }
             StateCommand::RequestVote => {
                 let state = self.server_state.lock().await.clone();
                 let results = self.request_vote(state).await;
-                response_channel.send(StateCommandResult::RequestVoteResponse(results));
+                match response_channel.send(StateCommandResult::RequestVoteResponse(results)) {
+                    Ok(_) => Ok(()),
+                    Err(e) => {
+                        tracing::error!(
+                            "ERROR sending response from RequestVote command: {:?}",
+                            e
+                        );
+                        Err(String::from("RequestVote"))
+                    }
+                }
             }
         }
-        Ok(())
     }
 
     async fn request_vote(

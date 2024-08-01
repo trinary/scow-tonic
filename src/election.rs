@@ -137,9 +137,7 @@ impl ElectionHandler {
                                         // we win!
                                         tracing::info!("WE WIN ✌️✌️✌️✌️✌️✌️");
                                         server_state_inner.role = Role::Leader;
-                                        server_state_inner.leader_state = Some(LeaderState::new(
-                                            server_state_inner.clone().last_log_index,
-                                        ));
+                                        server_state_inner.leader_state = Some(LeaderState::new());
                                         // commit the state change
                                         let (state_update_tx, state_update_rx) = oneshot::channel();
                                         self.command_handler_tx
