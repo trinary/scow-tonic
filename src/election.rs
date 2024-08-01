@@ -1,21 +1,12 @@
-use std::ops::Deref;
 use std::{error::Error, sync::Arc, time::Duration};
 
 use rand::{thread_rng, Rng};
 use tokio::sync::{mpsc::Sender, oneshot};
-use tokio::{
-    sync::Mutex,
-    task::{JoinError, JoinSet},
-    time::{timeout, Instant},
-};
-use tonic::transport::Channel;
 
 use crate::{
-    scow,
-    scow_impl::{LeaderState, Role, ServerState},
-    scow_key_value_client::ScowKeyValueClient,
+    scow_impl::{LeaderState, Role},
     state_handler::{StateCommand, StateCommandResult},
-    Config, Peer, RequestVoteReply, RequestVoteRequest,
+    Config,
 };
 
 #[path = "./client_tools.rs"]

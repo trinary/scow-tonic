@@ -4,12 +4,12 @@ use scow::*;
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::join;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 use tonic::transport::Server;
 
 use crate::election::ElectionHandler;
 use crate::heartbeat::Heartbeat;
-use crate::scow_impl::{MyScowKeyValue, ServerState};
+use crate::scow_impl::MyScowKeyValue;
 use crate::state_handler::StateHandler;
 
 mod db;

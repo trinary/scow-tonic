@@ -73,7 +73,7 @@ impl Heartbeat {
                         .ok()
                         .unwrap();
                     let heartbeat_response = heartbeat_response_rx.await.unwrap();
-                    let heartbeat_replies = match heartbeat_response {
+                    match heartbeat_response {
                         StateCommandResult::HeartbeatResponse(results) => {
                             tracing::info!("got a heartbeat response {:?}", results);
                         }

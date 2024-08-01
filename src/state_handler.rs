@@ -1,17 +1,14 @@
 use std::{fmt::Debug, sync::Arc};
 
 use tokio::{
-    sync::{
-        mpsc::{Receiver, Sender},
-        oneshot, Mutex,
-    },
-    task::{JoinError, JoinSet},
+    sync::{mpsc::Receiver, oneshot, Mutex},
+    task::JoinSet,
 };
 use tonic::{transport::Channel, Status};
 
 use crate::{
-    heartbeat::Heartbeat, scow, scow_impl::ServerState, scow_key_value_client::ScowKeyValueClient,
-    AppendEntriesReply, AppendEntriesRequest, Peer, RequestVoteRequest,
+    scow, scow_impl::ServerState, scow_key_value_client::ScowKeyValueClient, AppendEntriesRequest,
+    Peer, RequestVoteRequest,
 };
 
 #[path = "./client_tools.rs"]

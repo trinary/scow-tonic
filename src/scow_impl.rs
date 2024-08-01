@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use std::error::Error;
 
 use tokio::sync::mpsc::Sender;
@@ -122,7 +120,6 @@ impl ScowKeyValue for MyScowKeyValue {
         // and set current term to theirs.
         // that is, if their term is greater than ours
 
-
         let mut response;
 
         if inner.leader_term >= state.current_term {
@@ -144,10 +141,8 @@ impl ScowKeyValue for MyScowKeyValue {
         // TODO we need to commit the state update here
         let (state_update_tx, state_update_rx) = oneshot::channel();
         self.command_handler_tx
-        .send((
-            StateCommand::SetServerState(state),
-            state_update_tx,
-        )).await;
+            .send((StateCommand::SetServerState(state), state_update_tx))
+            .await;
 
         match state_update_rx.await {
             Ok(update) => tracing::info!(
@@ -155,11 +150,13 @@ impl ScowKeyValue for MyScowKeyValue {
                 update
             ),
             Err(e) => {
-                tracing::error!("got an ERR from updating state after handling append_entries: {:?}", e)
+                tracing::error!(
+                    "got an ERR from updating state after handling append_entries: {:?}",
+                    e
+                )
             }
         };
         response
-
     }
 
     async fn request_vote(
