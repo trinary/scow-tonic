@@ -30,10 +30,10 @@ pub enum StateCommandResult {
     StateSuccess,
 }
 
-// #[derive(Debug)]
-// pub enum StateCommandError {
-//     BasicError(String)
-// }
+#[derive(Debug)]
+pub enum StateCommandError {
+    BasicError(String)
+}
 
 pub struct StateHandler {
     rx: Receiver<(StateCommand, oneshot::Sender<StateCommandResult>)>,
@@ -80,9 +80,6 @@ impl StateHandler {
         &mut self,
         server_state: ServerState,
     ) -> Vec<Result<tonic::Response<scow::AppendEntriesReply>, Status>> {
-        // TODO: figure out how to make many parallel requests to these clients without blocking.
-        // we already had this problem in heartbeat.rs, we may need our own sub-channel to parallelize
-        // LETS TRY
 
         let mut joinset = JoinSet::new();
         let mut results = vec![];

@@ -18,13 +18,27 @@ impl Db {
     }
 
     pub(crate) fn get(&self, key: &str) -> Option<String> {
-        let state = self.shared.state.lock().unwrap();
-        state.entries.get(key).cloned()
+        let state = self.shared.state.lock();
+        match state {
+            Ok(s) => s.entries.get(key).cloned(),
+            Err(e) => {
+                tracing::error!("Could not acquire lock on DB: {}", e);
+                None
+            }
+        }
     }
 
+    // TODO this should probably be a result
     pub(crate) fn set(&self, key: &str, value: &str) {
-        let mut state = self.shared.state.lock().unwrap();
-        let _prev = state.entries.insert(key.to_owned(), value.to_owned());
+        let state = self.shared.state.lock();
+        match state {
+            Ok(mut s) => {
+                s.entries.insert(key.to_owned(), value.to_owned());
+            },
+            Err(e) => {
+                tracing::error!("Could not acquire lock on DB for a SET: {}", e);
+            },
+        }
     }
 }
 

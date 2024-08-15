@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::info!("MY config: {:?}", my_config);
 
-    let (state_tx, mut state_rx) = mpsc::channel(32);
+    let (state_tx, state_rx) = mpsc::channel(32);
 
     let mut state_handler = StateHandler::new(state_rx, &config_arc.servers, cli.id);
 

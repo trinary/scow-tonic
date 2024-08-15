@@ -31,11 +31,11 @@ impl Heartbeat {
     }
 
     pub async fn run_heartbeat_loop(&self) -> Result<(), Box<dyn Error>> {
-        self.heartbeat_loop().await;
+        self.heartbeat_loop().await?;
         Ok(())
     }
 
-    async fn heartbeat_loop(&self) -> () {
+    async fn heartbeat_loop(&self) -> Result<(), Box<dyn Error>> {
         let mut heartbeat_interval = tokio::time::interval(Duration::from_millis(
             self.config.heartbeat_interval_ms.into(),
         ));
@@ -48,10 +48,8 @@ impl Heartbeat {
                 let (response_tx, response_rx) = oneshot::channel();
                 self.command_handler_tx
                     .send((StateCommand::GetServerState, response_tx))
-                    .await
-                    .ok()
-                    .unwrap(); //todo 💣
-                let state_result = response_rx.await.unwrap();
+                    .await?; //todo resultify
+                let state_result = response_rx.await?;
 
                 let mut server_state_inner = match state_result {
                     StateCommandResult::StateResponse(state) => state,
@@ -59,7 +57,6 @@ impl Heartbeat {
                 };
 
                 if server_state_inner.role == Role::Leader {
-                    // we are the leader
                     server_state_inner.last_heartbeat = Instant::now(); // assume we are up to date so we don't trigger an election on ourselves....idk about this.
                     tracing::info!(
                         "HEARTBEAT GOING OUT, term {:?} 💖💖💖💖💖",
@@ -69,9 +66,7 @@ impl Heartbeat {
                     let (heartbeat_response_tx, heartbeat_response_rx) = oneshot::channel();
                     self.command_handler_tx
                         .send((StateCommand::Heartbeat, heartbeat_response_tx))
-                        .await
-                        .ok()
-                        .unwrap();
+                        .await?;
                     let heartbeat_response = heartbeat_response_rx.await.unwrap();
                     match heartbeat_response {
                         StateCommandResult::HeartbeatResponse(results) => {
