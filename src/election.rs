@@ -29,11 +29,11 @@ impl ElectionHandler {
         }
     }
     pub async fn run_election_loop(&self) -> Result<(), Box<dyn Error>> {
-        self.election_loop().await;
+        self.election_loop().await?;
         Ok(())
     }
 
-    async fn election_loop(&self) {
+    async fn election_loop(&self) -> Result<(), Box<dyn Error>>{
         let mut rng = thread_rng();
 
         let interval_range =
@@ -89,7 +89,7 @@ impl ElectionHandler {
                             StateCommand::SetServerState(server_state_inner),
                             state_update_tx,
                         ))
-                        .await;
+                        .await?;
 
                     match state_update_rx.await {
                         Ok(update) => tracing::info!(
@@ -104,7 +104,7 @@ impl ElectionHandler {
                     let (request_vote_tx, request_vote_rx) = oneshot::channel();
                     self.command_handler_tx
                         .send((StateCommand::RequestVote, request_vote_tx))
-                        .await;
+                        .await?;
 
                     match request_vote_rx.await {
                         Ok(cmd_res) => {
@@ -145,7 +145,7 @@ impl ElectionHandler {
                                                 StateCommand::SetServerState(server_state_inner),
                                                 state_update_tx,
                                             ))
-                                            .await;
+                                            .await?;
 
                                         match state_update_rx.await {
                                             Ok(update) => tracing::info!(
