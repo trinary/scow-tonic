@@ -32,7 +32,7 @@ pub enum StateCommandResult {
 
 #[derive(Debug)]
 pub enum StateCommandError {
-    BasicError(String)
+    BasicError(String),
 }
 
 pub struct StateHandler {
@@ -80,7 +80,6 @@ impl StateHandler {
         &mut self,
         server_state: ServerState,
     ) -> Vec<Result<tonic::Response<scow::AppendEntriesReply>, Status>> {
-
         let mut joinset = JoinSet::new();
         let mut results = vec![];
 
@@ -154,10 +153,7 @@ impl StateHandler {
                 match response_channel.send(StateCommandResult::HeartbeatResponse(results)) {
                     Ok(_) => Ok(()),
                     Err(e) => {
-                        tracing::error!(
-                            "ERROR sending response from Heartbeat command: {:?}",
-                            e
-                        );
+                        tracing::error!("ERROR sending response from Heartbeat command: {:?}", e);
                         Err(String::from("Heartbeat"))
                     }
                 }
@@ -168,10 +164,7 @@ impl StateHandler {
                 match response_channel.send(StateCommandResult::RequestVoteResponse(results)) {
                     Ok(_) => Ok(()),
                     Err(e) => {
-                        tracing::error!(
-                            "ERROR sending response from RequestVote command: {:?}",
-                            e
-                        );
+                        tracing::error!("ERROR sending response from RequestVote command: {:?}", e);
                         Err(String::from("RequestVote"))
                     }
                 }

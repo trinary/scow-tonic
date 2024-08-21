@@ -104,9 +104,8 @@ impl ScowKeyValue for MyScowKeyValue {
         let (response_tx, response_rx) = oneshot::channel();
         self.command_handler_tx
             .send((StateCommand::GetServerState, response_tx))
-            .await.map_err(|e| {
-                Status::from_error(Box::new(e))
-            })?; // TODO: error handling
+            .await
+            .map_err(|e| Status::from_error(Box::new(e)))?; // TODO: error handling
         let state_result = response_rx.await.unwrap();
         let mut state = match state_result {
             StateCommandResult::StateResponse(state) => state,
@@ -141,9 +140,7 @@ impl ScowKeyValue for MyScowKeyValue {
         self.command_handler_tx
             .send((StateCommand::SetServerState(state), state_update_tx))
             .await
-            .map_err(|e|{
-                Status::from_error(Box::new(e))
-            })?; // TODO error handling
+            .map_err(|e| Status::from_error(Box::new(e)))?; // TODO error handling
 
         match state_update_rx.await {
             Ok(update) => tracing::info!(
@@ -228,9 +225,8 @@ impl MyScowKeyValue {
             }
         }
         let (write_response_tx, write_response_rx) = oneshot::channel();
-        
-        self
-            .command_handler_tx
+
+        self.command_handler_tx
             .send((
                 StateCommand::SetServerState(state.clone()),
                 write_response_tx,

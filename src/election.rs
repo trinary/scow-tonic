@@ -33,7 +33,7 @@ impl ElectionHandler {
         Ok(())
     }
 
-    async fn election_loop(&self) -> Result<(), Box<dyn Error>>{
+    async fn election_loop(&self) -> Result<(), Box<dyn Error>> {
         let mut rng = thread_rng();
 
         let interval_range =

@@ -34,10 +34,10 @@ impl Db {
         match state {
             Ok(mut s) => {
                 s.entries.insert(key.to_owned(), value.to_owned());
-            },
+            }
             Err(e) => {
                 tracing::error!("Could not acquire lock on DB for a SET: {}", e);
-            },
+            }
         }
     }
 }
