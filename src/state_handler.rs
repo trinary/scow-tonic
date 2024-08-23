@@ -1,10 +1,12 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{fmt::Debug, sync::{mpsc::SendError, Arc}};
 
 use tokio::{
     sync::{mpsc::Receiver, oneshot, Mutex},
     task::JoinSet,
 };
 use tonic::{transport::Channel, Status};
+
+use thiserror::Error;
 
 use crate::{
     scow, scow_impl::ServerState, scow_key_value_client::ScowKeyValueClient, AppendEntriesRequest,
@@ -22,17 +24,22 @@ pub enum StateCommand {
     RequestVote,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum StateCommandResult {
+    #[error("StateResponse")]
     StateResponse(ServerState),
+    #[error("HeartbeatResponse")]
     HeartbeatResponse(Vec<Result<tonic::Response<scow::AppendEntriesReply>, Status>>),
+    #[error("RequestVoteResponse")]
     RequestVoteResponse(Vec<Result<tonic::Response<scow::RequestVoteReply>, Status>>), // todo these shouldnt be bound to our specific server/client types
+    #[error("StateSuccess")]
     StateSuccess,
 }
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum StateCommandError {
-    BasicError(String),
+    #[error("idk")]
+    StateResponseSendError(#[from] StateCommandResult)
 }
 
 pub struct StateHandler {
@@ -118,56 +125,36 @@ impl StateHandler {
         &mut self,
         cmd: StateCommand,
         response_channel: oneshot::Sender<StateCommandResult>,
-    ) -> Result<(), String> {
+    ) -> Result<(), StateCommandError> {
         match cmd {
             StateCommand::GetServerState => {
                 tracing::info!("StateHandler got a GetServerState command. 📖");
                 let state = self.server_state.lock().await.clone();
-                match response_channel.send(StateCommandResult::StateResponse(state)) {
-                    Ok(_) => Ok(()),
-                    Err(e) => {
-                        tracing::error!(
-                            "ERROR sending response from GetServerState command: {:?}",
-                            e
-                        );
-                        Err(String::from("GetServerState"))
-                    }
-                }
+                // .send returns its argument if if could not be sent, in the Err variant of a Result.
+                // that is really confusing behavior! Use Err for an error with helpful error stuff and 
+                // let the caller do something with the arg if they want to! Weird!
+
+                // this means that our responses also need to be Error to work with other Result-y things like thiserror. 
+                // This interface might be really terrible, or I am an idiot that doesn't understand the purpose.
+                response_channel.send(StateCommandResult::StateResponse(state))?;
+                Ok(())
             }
             StateCommand::SetServerState(s) => {
                 self.set_server_state(s).await;
-                match response_channel.send(StateCommandResult::StateSuccess) {
-                    Ok(_) => Ok(()),
-                    Err(e) => {
-                        tracing::error!(
-                            "ERROR sending response from SetServerState command: {:?}",
-                            e
-                        );
-                        Err(String::from("SetServerState"))
-                    }
-                }
+                response_channel.send(StateCommandResult::StateSuccess)?;
+                Ok(())
             }
             StateCommand::Heartbeat => {
                 let state = self.server_state.lock().await.clone();
                 let results = self.heartbeat(state).await;
-                match response_channel.send(StateCommandResult::HeartbeatResponse(results)) {
-                    Ok(_) => Ok(()),
-                    Err(e) => {
-                        tracing::error!("ERROR sending response from Heartbeat command: {:?}", e);
-                        Err(String::from("Heartbeat"))
-                    }
-                }
+                response_channel.send(StateCommandResult::HeartbeatResponse(results))?;
+                Ok(())
             }
             StateCommand::RequestVote => {
                 let state = self.server_state.lock().await.clone();
                 let results = self.request_vote(state).await;
-                match response_channel.send(StateCommandResult::RequestVoteResponse(results)) {
-                    Ok(_) => Ok(()),
-                    Err(e) => {
-                        tracing::error!("ERROR sending response from RequestVote command: {:?}", e);
-                        Err(String::from("RequestVote"))
-                    }
-                }
+                response_channel.send(StateCommandResult::RequestVoteResponse(results))?;
+                Ok(())
             }
         }
     }
