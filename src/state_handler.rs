@@ -1,4 +1,4 @@
-use std::{fmt::Debug, sync::{mpsc::SendError, Arc}};
+use std::{fmt::Debug, sync::Arc};
 
 use tokio::{
     sync::{mpsc::Receiver, oneshot, Mutex},
@@ -39,7 +39,7 @@ pub enum StateCommandResult {
 #[derive(Error, Debug)]
 pub enum StateCommandError {
     #[error("idk")]
-    StateResponseSendError(#[from] StateCommandResult)
+    StateResponseSendError(#[from] StateCommandResult),
 }
 
 pub struct StateHandler {
@@ -57,18 +57,18 @@ impl StateHandler {
         let clients: Vec<ScowKeyValueClient<Channel>> = peers
             .iter()
             .filter(|s| s.id != my_id)
-            .flat_map(|p| client_tools::build_client(p))
+            .flat_map(client_tools::build_client)
             .collect();
 
         tracing::info!("built clients in StateHandler new: {:?}", clients);
         Self {
             rx,
             server_state: Arc::new(Mutex::new(ServerState::new(my_id))),
-            clients: clients,
+            clients,
         }
     }
 
-    pub async fn run(&mut self) -> () {
+    pub async fn run(&mut self) {
         tracing::info!("StateHandler has started.");
         while let Some((cmd, response_channel)) = self.rx.recv().await {
             let r = self.handle_command(cmd, response_channel).await;
@@ -76,7 +76,7 @@ impl StateHandler {
         }
     }
 
-    async fn set_server_state(&mut self, new_state: ServerState) -> () {
+    async fn set_server_state(&mut self, new_state: ServerState) {
         tracing::info!("StateHandler got a SetServerState command. 📝");
         let mut current_state = self.server_state.lock().await;
         *current_state = new_state;
@@ -111,8 +111,8 @@ impl StateHandler {
         }
 
         while let Some(res) = joinset.join_next().await {
-            if res.is_ok() {
-                results.push(res.unwrap());
+            if let Ok(r) = res {
+                results.push(r);
             }
         }
 
@@ -129,12 +129,12 @@ impl StateHandler {
         match cmd {
             StateCommand::GetServerState => {
                 tracing::info!("StateHandler got a GetServerState command. 📖");
-                let state = self.server_state.lock().await.clone();
+                let state = *self.server_state.lock().await;
                 // .send returns its argument if if could not be sent, in the Err variant of a Result.
-                // that is really confusing behavior! Use Err for an error with helpful error stuff and 
+                // that is really confusing behavior! Use Err for an error with helpful error stuff and
                 // let the caller do something with the arg if they want to! Weird!
 
-                // this means that our responses also need to be Error to work with other Result-y things like thiserror. 
+                // this means that our responses also need to be Error to work with other Result-y things like thiserror.
                 // This interface might be really terrible, or I am an idiot that doesn't understand the purpose.
                 response_channel.send(StateCommandResult::StateResponse(state))?;
                 Ok(())
@@ -145,13 +145,13 @@ impl StateHandler {
                 Ok(())
             }
             StateCommand::Heartbeat => {
-                let state = self.server_state.lock().await.clone();
+                let state = *self.server_state.lock().await;
                 let results = self.heartbeat(state).await;
                 response_channel.send(StateCommandResult::HeartbeatResponse(results))?;
                 Ok(())
             }
             StateCommand::RequestVote => {
-                let state = self.server_state.lock().await.clone();
+                let state = *self.server_state.lock().await;
                 let results = self.request_vote(state).await;
                 response_channel.send(StateCommandResult::RequestVoteResponse(results))?;
                 Ok(())
@@ -185,8 +185,8 @@ impl StateHandler {
         }
 
         while let Some(res) = joinset.join_next().await {
-            if res.is_ok() {
-                results.push(res.unwrap());
+            if let Ok(r) = res {
+                results.push(r);
             }
         }
         results

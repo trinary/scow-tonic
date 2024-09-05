@@ -28,7 +28,6 @@ impl Db {
         }
     }
 
-    // TODO this should probably be a result
     pub(crate) fn set(&self, key: &str, value: &str) {
         let state = self.shared.state.lock();
         match state {

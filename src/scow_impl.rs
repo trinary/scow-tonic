@@ -32,7 +32,7 @@ pub struct ServerState {
 impl ServerState {
     pub fn new(id: u64) -> Self {
         Self {
-            id: id,
+            id,
             role: Role::Follower,
             current_term: 0,
             voted_for: None,
@@ -117,25 +117,22 @@ impl ScowKeyValue for MyScowKeyValue {
         // and set current term to theirs.
         // that is, if their term is greater than ours
 
-        let response;
-
-        if inner.leader_term >= state.current_term {
+        let response = if inner.leader_term >= state.current_term {
             // shouldnt be possible to have an equal term, but just in case?
             state.role = Role::Follower; // does this fuck up if we're a candidate when this happens?
             state.current_term = inner.leader_term;
-            response = Ok(Response::new(AppendEntriesReply {
+            Ok(Response::new(AppendEntriesReply {
                 term: state.current_term,
                 success: true,
             }))
         } else {
             // the leader is further behind in terms than we are!
-            response = Ok(Response::new(AppendEntriesReply {
+            Ok(Response::new(AppendEntriesReply {
                 term: state.current_term,
                 success: false,
             }))
         };
 
-        // TODO we need to commit the state update here
         let (state_update_tx, state_update_rx) = oneshot::channel();
         self.command_handler_tx
             .send((StateCommand::SetServerState(state), state_update_tx))
@@ -214,23 +211,19 @@ impl MyScowKeyValue {
 
         if candidate_term <= state.current_term {
             state.voted_for = None;
+        } else if (state.voted_for.is_none() || state.voted_for == Some(candidate_id))
+            && candidate_last_index >= state.last_log_index
+        {
+            state.voted_for = Some(candidate_id);
+            vote = true;
         } else {
-            if (state.voted_for.is_none() || state.voted_for == Some(candidate_id))
-                && candidate_last_index >= state.last_log_index
-            {
-                state.voted_for = Some(candidate_id);
-                vote = true;
-            } else {
-                state.voted_for = None;
-            }
+            state.voted_for = None;
         }
+
         let (write_response_tx, write_response_rx) = oneshot::channel();
 
         self.command_handler_tx
-            .send((
-                StateCommand::SetServerState(state.clone()),
-                write_response_tx,
-            ))
+            .send((StateCommand::SetServerState(state), write_response_tx))
             .await?;
 
         let vote_response = write_response_rx.await;

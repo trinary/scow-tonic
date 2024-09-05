@@ -9,9 +9,6 @@ use crate::{
     Config,
 };
 
-#[path = "./client_tools.rs"]
-mod client_tools;
-
 pub struct ElectionHandler {
     command_handler_tx: Sender<(StateCommand, oneshot::Sender<StateCommandResult>)>,
     config: Arc<Config>,
@@ -24,8 +21,8 @@ impl ElectionHandler {
         config: Arc<Config>,
     ) -> Self {
         Self {
-            command_handler_tx: command_handler_tx,
-            config: config,
+            command_handler_tx,
+            config,
         }
     }
     pub async fn run_election_loop(&self) -> Result<(), Box<dyn Error>> {

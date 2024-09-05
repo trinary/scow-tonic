@@ -11,9 +11,6 @@ use crate::{
     Config,
 };
 
-#[path = "./client_tools.rs"]
-mod client_tools;
-
 pub struct Heartbeat {
     command_handler_tx: Sender<(StateCommand, oneshot::Sender<StateCommandResult>)>,
     config: Arc<Config>,
@@ -25,8 +22,8 @@ impl Heartbeat {
         config: Arc<Config>,
     ) -> Self {
         Self {
-            command_handler_tx: command_handler_tx,
-            config: config,
+            command_handler_tx,
+            config,
         }
     }
 
