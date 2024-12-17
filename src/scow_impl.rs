@@ -1,5 +1,6 @@
 use std::error::Error;
 
+use prost::bytes::Bytes;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 use tokio::time::Instant;
@@ -87,8 +88,30 @@ impl ScowKeyValue for MyScowKeyValue {
 
     async fn set(&self, request: Request<SetRequest>) -> Result<Response<SetReply>, Status> {
         let inner = request.into_inner();
-        let _db_response = self.db.set(&inner.key, &inner.value);
-        Ok(Response::new(SetReply { success: true }))
+
+        // we need to reject writes if we aren't the leader.
+        tracing::info!("asking for server_state in set");
+        let (response_tx, response_rx) = oneshot::channel();
+        self.command_handler_tx
+            .send((StateCommand::GetServerState, response_tx))
+            .await
+            .map_err(|e| Status::from_error(Box::new(e)))?; // TODO: error handling
+        let state_result = response_rx.await.unwrap();
+        let state = match state_result {
+            StateCommandResult::StateResponse(state) => state,
+            _s => panic!("got the wrong result from a read op to state handler"),
+        };
+
+        if state.role != Role::Leader {
+            Err(Status::with_details(tonic::Code::FailedPrecondition, "This server is not the leader.", Bytes::new()))
+        } else {
+
+            // TODO we need to propogate writes to other clients via appendEntries when this write occurs
+            let _db_response = self.db.set(&inner.key, &inner.value);
+            
+            
+            Ok(Response::new(SetReply { success: true }))    
+        }
     }
 
     async fn append_entries(

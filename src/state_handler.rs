@@ -22,6 +22,7 @@ pub enum StateCommand {
     SetServerState(ServerState),
     Heartbeat,
     RequestVote,
+    DistributeWrites(Vec<scow::SetRequest>),
 }
 
 #[derive(Debug, Error)]
@@ -76,51 +77,6 @@ impl StateHandler {
         }
     }
 
-    async fn set_server_state(&mut self, new_state: ServerState) {
-        tracing::info!("StateHandler got a SetServerState command. 📝");
-        let mut current_state = self.server_state.lock().await;
-        *current_state = new_state;
-        tracing::info!("StateHandler set the state. 📝");
-    }
-
-    async fn heartbeat(
-        &mut self,
-        server_state: ServerState,
-    ) -> Vec<Result<tonic::Response<scow::AppendEntriesReply>, Status>> {
-        let mut joinset = JoinSet::new();
-        let mut results = vec![];
-
-        for mut client in
-            <Vec<ScowKeyValueClient<Channel>> as Clone>::clone(&self.clients).into_iter()
-        {
-            joinset.spawn(async move {
-                tracing::info!("sending append_entries HEARTBEAT to {:?}", client);
-                let append_result = client
-                    .append_entries(AppendEntriesRequest {
-                        leader_term: server_state.current_term,
-                        leader_id: server_state.id,
-                        prev_log_index: 33333,
-                        prev_log_term: 44444,
-                        leader_commit: 55555,
-                        entries: vec![],
-                    })
-                    .await;
-                tracing::info!("append_entries HEARTBEAT COMPLETE");
-                append_result
-            });
-        }
-
-        while let Some(res) = joinset.join_next().await {
-            if let Ok(r) = res {
-                results.push(r);
-            }
-        }
-
-        tracing::info!("done collecting replies from heartbeat.");
-
-        results
-    }
-
     async fn handle_command(
         &mut self,
         cmd: StateCommand,
@@ -146,7 +102,8 @@ impl StateHandler {
             }
             StateCommand::Heartbeat => {
                 let state = *self.server_state.lock().await;
-                let results = self.heartbeat(state).await;
+                let empty_writes: Arc<Vec<scow::SetRequest>> = Arc::new(vec![]);
+                let results = self.heartbeat(state, empty_writes).await;
                 response_channel.send(StateCommandResult::HeartbeatResponse(results))?;
                 Ok(())
             }
@@ -156,7 +113,61 @@ impl StateHandler {
                 response_channel.send(StateCommandResult::RequestVoteResponse(results))?;
                 Ok(())
             }
+            StateCommand::DistributeWrites(writes) => {
+                let state = *self.server_state.lock().await;
+                let writes_arc = Arc::new(writes);
+                let results = self.heartbeat(state, writes_arc.clone()).await;
+                response_channel.send(StateCommandResult::HeartbeatResponse(results))?;
+                Ok(())
+            }
         }
+    }
+
+    async fn set_server_state(&mut self, new_state: ServerState) {
+        tracing::info!("StateHandler got a SetServerState command. 📝");
+        let mut current_state = self.server_state.lock().await;
+        *current_state = new_state;
+        tracing::info!("StateHandler set the state. 📝");
+    }
+
+    async fn heartbeat(
+        &self,
+        server_state: ServerState,
+        writes: Arc<Vec<scow::SetRequest>>,
+    ) -> Vec<Result<tonic::Response<scow::AppendEntriesReply>, Status>> {
+        let mut joinset = JoinSet::new();
+        let mut results = vec![];
+
+        for mut client in
+            <Vec<ScowKeyValueClient<Channel>> as Clone>::clone(&self.clients).into_iter()
+        {
+            let locallll = writes.clone();
+            joinset.spawn(async move {
+                tracing::info!("sending append_entries HEARTBEAT to {:?}", client);
+
+                let append_result = client
+                    .append_entries(AppendEntriesRequest {
+                        leader_term: server_state.current_term,
+                        leader_id: server_state.id,
+                        prev_log_index: 33333,
+                        prev_log_term: 44444,
+                        leader_commit: 55555,
+                        entries:  locallll.to_vec(),
+                    })
+                    .await;
+                tracing::info!("append_entries HEARTBEAT COMPLETE");
+                append_result
+            });
+        }
+
+        while let Some(res) = joinset.join_next().await {
+            if let Ok(r) = res {
+                results.push(r);
+            }
+        }
+
+        tracing::info!("done collecting replies from heartbeat.");
+        results
     }
 
     async fn request_vote(
