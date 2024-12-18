@@ -108,10 +108,24 @@ impl ScowKeyValue for MyScowKeyValue {
 
             // TODO we need to propogate writes to other clients via appendEntries when this write occurs
             let _db_response = self.db.set(&inner.key, &inner.value);
-            
-            
-            Ok(Response::new(SetReply { success: true }))    
-        }
+
+            let (cmd_tx, cmd_rx) = oneshot::channel();
+            self.command_handler_tx
+                .send((StateCommand::DistributeWrites(vec![inner]), cmd_tx))
+                .await
+                .map_err(|e| Status::from_error(Box::new(e)))?;
+            let cmd_result= cmd_rx.await.unwrap();
+            match cmd_result {
+                _ =>             Ok(Response::new(SetReply { success: true })),
+
+                // StateCommandResult::StateResponse(server_state) => todo!(),
+                
+                // StateCommandResult::HeartbeatResponse(vec) => todo!(),
+                // StateCommandResult::RequestVoteResponse(vec) => todo!(),
+                // StateCommandResult::StateSuccess => todo!(),
+            }
+        } 
+        
     }
 
     async fn append_entries(
@@ -120,6 +134,7 @@ impl ScowKeyValue for MyScowKeyValue {
     ) -> Result<Response<AppendEntriesReply>, Status> {
         let inner = request.into_inner();
         for i in inner.entries {
+            tracing::info!("WROTE A KEY FROM APPEND 🔑🔑🔑🔑🔑🔑");
             self.db.set(&i.key, &i.value);
         }
 
