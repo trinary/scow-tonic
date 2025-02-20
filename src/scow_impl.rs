@@ -116,7 +116,7 @@ impl ScowKeyValue for MyScowKeyValue {
                 .map_err(|e| Status::from_error(Box::new(e)))?;
             let cmd_result= cmd_rx.await.unwrap();
             match cmd_result {
-                _ =>             Ok(Response::new(SetReply { success: true })),
+                _ => Ok(Response::new(SetReply { success: true })),
 
                 // StateCommandResult::StateResponse(server_state) => todo!(),
                 
@@ -133,10 +133,6 @@ impl ScowKeyValue for MyScowKeyValue {
         request: Request<AppendEntriesRequest>,
     ) -> Result<Response<AppendEntriesReply>, Status> {
         let inner = request.into_inner();
-        for i in inner.entries {
-            tracing::info!("WROTE A KEY FROM APPEND 🔑🔑🔑🔑🔑🔑");
-            self.db.set(&i.key, &i.value);
-        }
 
         tracing::info!("asking for server_state in append_entries");
         let (response_tx, response_rx) = oneshot::channel();
@@ -170,6 +166,11 @@ impl ScowKeyValue for MyScowKeyValue {
                 success: false,
             }))
         };
+
+        for i in inner.entries {
+            tracing::info!("WROTE A KEY FROM APPEND 🔑🔑🔑🔑🔑🔑");
+            self.db.set(&i.key, &i.value);
+        }
 
         let (state_update_tx, state_update_rx) = oneshot::channel();
         self.command_handler_tx
